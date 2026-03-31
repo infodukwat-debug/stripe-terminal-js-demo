@@ -1,16 +1,16 @@
 import React, { Component } from "react";
 
-import Client from "./client";
-import Logger from "./logger";
+import Client from "../client";
+import Logger from "../logger";
 
-import BackendURLForm from "./Forms/BackendURLForm.jsx";
-import CommonWorkflows from "./Forms/CommonWorkflows.jsx";
-import RefundForm from "./Forms/RefundForm.jsx";
-import CartForm from "./Forms/CartForm.jsx";
-import ConnectionInfo from "./ConnectionInfo/ConnectionInfo.jsx";
-import Readers from "./Forms/Readers.jsx";
-import Group from "./components/Group/Group.jsx";
-import Logs from "./Logs/Logs.jsx";
+import BackendURLForm from "../Forms/BackendURLForm.jsx";
+import CommonWorkflows from "../Forms/CommonWorkflows.jsx";
+import RefundForm from "../Forms/RefundForm.jsx";
+import CartForm from "../Forms/CartForm.jsx";
+import ConnectionInfo from "../ConnectionInfo/ConnectionInfo.jsx";
+import Readers from "../Forms/Readers.jsx";
+import Group from "./Group/Group.jsx";
+import Logs from "../Logs/Logs.jsx";
 
 import { css } from "emotion";
 
