@@ -29,7 +29,7 @@ class App extends Component {
       chargeAmount: 5100,
       itemDescription: "Red t-shirt",
       taxAmount: 100,
-      currency: "usd",
+      currency: "eur",
       workFlowInProgress: null,
       discoveryWasCancelled: false,
       refundedChargeID: null,
