@@ -14,11 +14,19 @@ import Logs from "../Logs/Logs.jsx";
 
 import { css } from "emotion";
 
+// Liste des produits
+const products = [
+  { id: 1, name: '1 min', price: 100, image: '🕐' },
+  { id: 2, name: '5 mins', price: 500, image: '🕔' },
+  { id: 3, name: '15 mins', price: 1200, image: '🕒' },
+  { id: 4, name: '30 mins', price: 2000, image: '🕡' },
+];
+
 class App extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      status: "requires_initializing", // requires_connecting || reader_registration || workflows
+      status: "requires_initializing",
       backendURL: null,
       discoveredReaders: [],
       connectionStatus: "not_connected",
@@ -26,9 +34,9 @@ class App extends Component {
       readerLabel: "",
       registrationCode: "",
       cancelablePayment: false,
-      chargeAmount: 5100,
-      itemDescription: "Red t-shirt",
-      taxAmount: 100,
+      chargeAmount: 100,          // par défaut 1€
+      itemDescription: "Test produit",
+      taxAmount: 0,
       currency: "eur",
       workFlowInProgress: null,
       discoveryWasCancelled: false,
@@ -39,7 +47,10 @@ class App extends Component {
       testCardNumber: "",
       testPaymentMethod: "visa",
       tipAmount: null,
-      simulateOnReaderTip: false
+      simulateOnReaderTip: false,
+      // Nouveaux champs pour la sélection de produits
+      selectedProduct: null,
+      showProductSelection: true,
     };
   }
 
@@ -48,32 +59,22 @@ class App extends Component {
 
   runWorkflow = async (workflowName, workflowFn) => {
     console.log(workflowName, workflowFn);
-    this.setState({
-      workFlowInProgress: workflowName
-    });
+    this.setState({ workFlowInProgress: workflowName });
     try {
       await workflowFn();
     } finally {
-      this.setState({
-        workFlowInProgress: null
-      });
+      this.setState({ workFlowInProgress: null });
     }
   };
 
   // 1. Stripe Terminal Initialization
   initializeBackendClientAndTerminal(url) {
-    // 1a. Initialize Client class, which communicates with the example terminal backend
     this.client = new Client(url);
-
-    // 1b. Initialize the StripeTerminal object
     this.terminal = window.StripeTerminal.create({
-      // 1c. Create a callback that retrieves a new ConnectionToken from the example backend
       onFetchConnectionToken: async () => {
         let connectionTokenResult = await this.client.createConnectionToken();
         return connectionTokenResult.secret;
       },
-      // 1c. (Optional) Create a callback that will be called if the reader unexpectedly disconnects.
-      // You can use this callback to alert your user that the reader is no longer connected and will need to be reconnected.
       onUnexpectedReaderDisconnect: Logger.tracedFn(
         "onUnexpectedReaderDisconnect",
         "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-create",
@@ -85,8 +86,6 @@ class App extends Component {
           });
         }
       ),
-      // 1c. (Optional) Create a callback that will be called when the reader's connection status changes.
-      // You can use this callback to update your UI with the reader's connection status.
       onConnectionStatusChange: Logger.tracedFn(
         "onConnectionStatusChange",
         "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-create",
@@ -166,19 +165,13 @@ class App extends Component {
 
   // 2. Discover and connect to a reader.
   discoverReaders = async () => {
-    this.setState({
-      discoveryWasCancelled: false
-    });
-
-    // 2a. Discover registered readers to connect to.
+    this.setState({ discoveryWasCancelled: false });
     const discoverResult = await this.terminal.discoverReaders();
-
     if (discoverResult.error) {
       console.log("Failed to discover: ", discoverResult.error);
       return discoverResult.error;
     } else {
       if (this.state.discoveryWasCancelled) return;
-
       this.setState({
         discoveredReaders: discoverResult.discoveredReaders
       });
@@ -187,20 +180,15 @@ class App extends Component {
   };
 
   cancelDiscoverReaders = () => {
-    this.setState({
-      discoveryWasCancelled: true
-    });
+    this.setState({ discoveryWasCancelled: true });
   };
 
   connectToSimulator = async () => {
-    const simulatedResult = await this.terminal.discoverReaders({
-      simulated: true
-    });
+    const simulatedResult = await this.terminal.discoverReaders({ simulated: true });
     await this.connectToReader(simulatedResult.discoveredReaders[0]);
   };
 
   connectToReader = async selectedReader => {
-    // 2b. Connect to a discovered reader.
     const connectResult = await this.terminal.connectReader(selectedReader);
     if (connectResult.error) {
       console.log("Failed to connect:", connectResult.error);
@@ -216,11 +204,8 @@ class App extends Component {
   };
 
   disconnectReader = async () => {
-    // 2c. Disconnect from the reader, in case the user wants to switch readers.
     await this.terminal.disconnectReader();
-    this.setState({
-      reader: null
-    });
+    this.setState({ reader: null });
   };
 
   registerAndConnectNewReader = async (label, registrationCode, location) => {
@@ -230,7 +215,6 @@ class App extends Component {
         registrationCode,
         location
       });
-      // After registering a new reader, we can connect immediately using the reader object returned from the server.
       await this.connectToReader(reader);
       console.log("Registered and Connected Successfully!");
     } catch (e) {
@@ -240,7 +224,6 @@ class App extends Component {
 
   // 3. Terminal Workflows (Once connected to a reader)
   updateLineItems = async () => {
-    // 3a. Update the reader display to show cart contents to the customer
     await this.terminal.setReaderDisplay({
       type: "cart",
       cart: {
@@ -262,8 +245,6 @@ class App extends Component {
 
   // 3b. Collect a card present payment
   collectCardPayment = async () => {
-    // We want to reuse the same PaymentIntent object in the case of declined charges, so we
-    // store the pending PaymentIntent's secret until the payment is complete.
     if (!this.pendingPaymentIntentSecret) {
       try {
         let paymentMethodTypes = ["card_present"];
@@ -278,12 +259,9 @@ class App extends Component {
         });
         this.pendingPaymentIntentSecret = createIntentResponse.secret;
       } catch (e) {
-        // Suppress backend errors since they will be shown in logs
         return;
       }
     }
-
-
 
     const simulatorConfiguration = {
       testPaymentMethod: this.state.testPaymentMethod,
@@ -294,7 +272,6 @@ class App extends Component {
       simulatorConfiguration.tipAmount = Number(this.state.tipAmount);
     }
 
-    // Read a card from the customer
     this.terminal.setSimulatorConfiguration(simulatorConfiguration);
     const paymentMethodPromise = this.terminal.collectPaymentMethod(
       this.pendingPaymentIntentSecret
@@ -307,27 +284,31 @@ class App extends Component {
       const confirmResult = await this.terminal.processPayment(
         result.paymentIntent
       );
-      // At this stage, the payment can no longer be canceled because we've sent the request to the network.
       this.setState({ cancelablePayment: false });
       if (confirmResult.error) {
         alert(`Confirm failed: ${confirmResult.error.message}`);
       } else if (confirmResult.paymentIntent) {
         if (confirmResult.paymentIntent.status !== "succeeded") {
           try {
-            // Capture the PaymentIntent from your backend client and mark the payment as complete
             let captureResult = await this.client.capturePaymentIntent({
               paymentIntentId: confirmResult.paymentIntent.id
             });
             this.pendingPaymentIntentSecret = null;
             console.log("Payment Successful!");
+            // === ALERTE DISTRIBUTION ===
+            alert(`✅ Distribution de ${this.state.selectedProduct?.name} en cours...`);
+            // Retour à la sélection des produits
+            this.setState({ showProductSelection: true, selectedProduct: null });
             return captureResult;
           } catch (e) {
-            // Suppress backend errors since they will be shown in logs
             return;
           }
         } else {
           this.pendingPaymentIntentSecret = null;
           console.log("Single-message payment successful!");
+          // === ALERTE DISTRIBUTION ===
+          alert(`✅ Distribution de ${this.state.selectedProduct?.name} en cours...`);
+          this.setState({ showProductSelection: true, selectedProduct: null });
           return confirmResult;
         }
       }
@@ -335,7 +316,6 @@ class App extends Component {
   };
 
   // 3c. Cancel a pending payment.
-  // Note this can only be done before calling `processPayment`.
   cancelPendingPayment = async () => {
     await this.terminal.cancelCollectPaymentMethod();
     this.pendingPaymentIntentSecret = null;
@@ -344,20 +324,17 @@ class App extends Component {
 
   // 3d. Save a card for re-use online.
   saveCardForFutureUse = async () => {
-    // First, read a card without charging it using `readReusableCard`
     const readResult = await this.terminal.readReusableCard();
     if (readResult.error) {
       alert(`readReusableCard failed: ${readResult.error.message}`);
     } else {
       try {
-        // Then, pass the payment method to your backend client to save it to a customer
         let customer = await this.client.savePaymentMethodToCustomer({
           paymentMethodId: readResult.payment_method.id
         });
         console.log("Payment method saved to customer!", customer);
         return customer;
       } catch (e) {
-        // Suppress backend errors since they will be shown in logs
         return;
       }
     }
@@ -414,10 +391,19 @@ class App extends Component {
     this.initializeBackendClientAndTerminal(url);
     this.setState({ backendURL: url });
   };
+
+  selectProduct = (product) => {
+    this.setState({
+      selectedProduct: product,
+      chargeAmount: product.price,
+      taxAmount: 0,
+      showProductSelection: false,
+      itemDescription: product.name
+    });
+  };
+
   updateChargeAmount = amount => {
     this.setState({ chargeAmount: parseInt(amount, 10) });
-    // we changed the charge amount, so we need to reset the pending payment intent secret
-    // or else we'll try to use the old payment intent instead of creating a new one
     this.pendingPaymentIntentSecret = null;
   };
   updateItemDescription = description =>
@@ -452,8 +438,46 @@ class App extends Component {
       cancelablePayment,
       reader,
       discoveredReaders,
-      usingSimulator
+      usingSimulator,
+      showProductSelection,
+      selectedProduct,
     } = this.state;
+
+    // Écran de sélection des produits (si backend et lecteur sont prêts)
+    if (showProductSelection && backendURL !== null && reader !== null) {
+      return (
+        <div>
+          <h2 style={{ textAlign: 'center' }}>Choisissez votre durée</h2>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'center' }}>
+            {products.map(product => (
+              <button
+                key={product.id}
+                onClick={() => this.selectProduct(product)}
+                style={{
+                  width: '150px',
+                  padding: '20px',
+                  fontSize: '1.2rem',
+                  background: '#f0f0f0',
+                  border: '1px solid #ccc',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  transition: '0.2s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#e0e0e0'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f0f0f0'}
+              >
+                <div style={{ fontSize: '3rem' }}>{product.image}</div>
+                <div>{product.name}</div>
+                <div>{(product.price / 100).toFixed(2)} €</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // Reste de la logique originale
     if (backendURL === null && reader === null) {
       return <BackendURLForm onSetBackendURL={this.onSetBackendURL} />;
     } else if (reader === null) {
@@ -471,6 +495,19 @@ class App extends Component {
     } else {
       return (
         <>
+          <div style={{ marginBottom: '20px', textAlign: 'center' }}>
+            {selectedProduct && (
+              <div style={{ background: '#e3f2fd', padding: '10px', borderRadius: '8px' }}>
+                <strong>Produit sélectionné :</strong> {selectedProduct.name} - {(selectedProduct.price / 100).toFixed(2)} €
+                <button 
+                  onClick={() => this.setState({ showProductSelection: true, selectedProduct: null })}
+                  style={{ marginLeft: '15px', padding: '5px 10px', cursor: 'pointer' }}
+                >
+                  Changer
+                </button>
+              </div>
+            )}
+          </div>
           <CommonWorkflows
             workFlowDisabled={this.isWorkflowDisabled()}
             onClickCollectCardPayments={() =>
