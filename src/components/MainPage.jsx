@@ -77,35 +77,34 @@ class App extends Component {
     }
   };
 
-  initializeBackendClientAndTerminal(url) {
-
-    initializeBackendClientAndTerminal(url) {
-  console.log("initializeBackendClientAndTerminal with", url);
+ initializeBackendClientAndTerminal(url) {
   this.client = new Client(url);
-  // ... le reste du code inchangé
+  this.terminal = window.StripeTerminal.create({
+    onFetchConnectionToken: async () => {
+      let connectionTokenResult = await this.client.createConnectionToken();
+      return connectionTokenResult.secret;
+    },
+    onUnexpectedReaderDisconnect: Logger.tracedFn(
+      "onUnexpectedReaderDisconnect",
+      "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-create",
+      () => {
+        alert("Unexpected disconnect from the reader");
+        this.setState({
+          connectionStatus: "not_connected",
+          reader: null
+        });
+      }
+    ),
+    onConnectionStatusChange: Logger.tracedFn(
+      "onConnectionStatusChange",
+      "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-create",
+      ev => {
+        this.setState({ connectionStatus: ev.status, reader: null });
+      }
+    )
+  });
+  // watchObject (si nécessaire)
 }
-    this.client = new Client(url);
-    this.terminal = window.StripeTerminal.create({
-      onFetchConnectionToken: async () => {
-        let connectionTokenResult = await this.client.createConnectionToken();
-        return connectionTokenResult.secret;
-      },
-      onUnexpectedReaderDisconnect: Logger.tracedFn(
-        "onUnexpectedReaderDisconnect",
-        "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-create",
-        () => {
-          alert("Unexpected disconnect from the reader");
-          this.setState({ connectionStatus: "not_connected", reader: null });
-        }
-      ),
-      onConnectionStatusChange: Logger.tracedFn(
-        "onConnectionStatusChange",
-        "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-create",
-        ev => {
-          this.setState({ connectionStatus: ev.status, reader: null });
-        }
-      )
-    });
     // watchObject (inchangé)
     Logger.watchObject(this.client, "backend", {
       createConnectionToken: { docsUrl: "https://stripe.com/docs/terminal/sdk/js#connection-token" },
