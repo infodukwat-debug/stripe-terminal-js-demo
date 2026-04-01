@@ -1,7 +1,7 @@
 import React, { Component } from "react";
 
 import Client from "../client";
-import Logger from "../logger";
+import Logger from "../ logger";
 
 import BackendURLForm from "../Forms/BackendURLForm.jsx";
 import CommonWorkflows from "../Forms/CommonWorkflows.jsx";
@@ -183,12 +183,17 @@ class App extends Component {
   };
 
   collectCardPayment = async () => {
-    if (this.state.paymentInProgress) return;
+    console.log("=== collectCardPayment START ===");
+    if (this.state.paymentInProgress) {
+      console.log("Paiement déjà en cours, abandon");
+      return;
+    }
     this.setState({ paymentInProgress: true });
 
     try {
       let paymentMethodTypes = ["card_present"];
       if (this.state.currency === "cad") paymentMethodTypes.push("interac_present");
+      console.log("Création du PaymentIntent avec amount:", this.state.chargeAmount + this.state.taxAmount);
       const createIntentResponse = await this.client.createPaymentIntent({
         amount: this.state.chargeAmount + this.state.taxAmount,
         currency: this.state.currency,
@@ -196,6 +201,7 @@ class App extends Component {
         paymentMethodTypes
       });
       const clientSecret = createIntentResponse.secret;
+      console.log("clientSecret reçu:", clientSecret);
 
       const simulatorConfiguration = {
         testPaymentMethod: this.state.testPaymentMethod,
@@ -205,14 +211,18 @@ class App extends Component {
       this.terminal.setSimulatorConfiguration(simulatorConfiguration);
 
       this.setState({ cancelablePayment: true });
+      console.log("Appel de collectPaymentMethod...");
       const collectResult = await this.terminal.collectPaymentMethod(clientSecret);
+      console.log("collectPaymentMethod result:", collectResult);
       if (collectResult.error) {
         console.log("Collect payment method failed:", collectResult.error.message);
         this.setState({ cancelablePayment: false, paymentInProgress: false });
         return;
       }
 
+      console.log("Appel de processPayment...");
       const confirmResult = await this.terminal.processPayment(collectResult.paymentIntent);
+      console.log("processPayment result:", confirmResult);
       this.setState({ cancelablePayment: false });
       if (confirmResult.error) {
         alert(`Confirm failed: ${confirmResult.error.message}`);
@@ -221,6 +231,7 @@ class App extends Component {
       }
 
       if (confirmResult.paymentIntent) {
+        console.log("PaymentIntent confirmé, démarrage session");
         this.pendingPaymentIntentId = confirmResult.paymentIntent.id;
         const startTime = Date.now();
         this.setState({
@@ -233,11 +244,14 @@ class App extends Component {
         if (this.timerInterval) clearInterval(this.timerInterval);
         this.timerInterval = setInterval(() => this.forceUpdate(), 1000);
         console.log("Préautorisation réussie, session commencée à", new Date(startTime).toLocaleTimeString());
+      } else {
+        console.log("Aucun PaymentIntent dans confirmResult");
       }
     } catch (err) {
-      console.error(err);
+      console.error("Erreur inattendue dans collectCardPayment:", err);
       this.setState({ paymentInProgress: false });
     }
+    console.log("=== collectCardPayment END ===");
   };
 
   cancelPendingPayment = async () => {
