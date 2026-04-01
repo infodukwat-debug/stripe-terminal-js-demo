@@ -14,13 +14,16 @@ import Logs from "../Logs/Logs.jsx";
 
 import { css } from "emotion";
 
-// Liste des produits
+// Liste des produits (durées)
 const products = [
-  { id: 1, name: '1 min', price: 100, image: '🕐' },
-  { id: 2, name: '5 mins', price: 500, image: '🕔' },
-  { id: 3, name: '15 mins', price: 1200, image: '🕒' },
-  { id: 4, name: '30 mins', price: 2000, image: '🕡' },
+  { id: 1, name: '1 min', price: 100, image: '🕐' },   // 1,00 €
+  { id: 2, name: '5 mins', price: 500, image: '🕔' },  // 5,00 €
+  { id: 3, name: '15 mins', price: 1200, image: '🕒' }, // 12,00 €
+  { id: 4, name: '30 mins', price: 2000, image: '🕡' }, // 20,00 €
 ];
+
+// Prix de la minute supplémentaire (en centimes)
+const EXTRA_MINUTE_PRICE = 100; // 1,00 €
 
 class App extends Component {
   constructor(props) {
@@ -34,7 +37,7 @@ class App extends Component {
       readerLabel: "",
       registrationCode: "",
       cancelablePayment: false,
-      chargeAmount: 100,          // par défaut 1€
+      chargeAmount: 100,          // 1€ par défaut
       itemDescription: "Test produit",
       taxAmount: 0,
       currency: "eur",
@@ -48,10 +51,19 @@ class App extends Component {
       testPaymentMethod: "visa",
       tipAmount: null,
       simulateOnReaderTip: false,
-      // Nouveaux champs pour la sélection de produits
+      // Nouveaux champs pour la sélection de produits et la gestion de session
       selectedProduct: null,
       showProductSelection: true,
+      // Session de paiement
+      pendingPaymentIntentId: null,   // ID du PaymentIntent en attente de capture
+      sessionStartTime: null,          // timestamp de début de session
+      waitingForExit: false,           // état : préautorisation faite, utilisateur dans la cabine
     };
+    this.timerInterval = null;
+  }
+
+  componentWillUnmount() {
+    if (this.timerInterval) clearInterval(this.timerInterval);
   }
 
   isWorkflowDisabled = () =>
@@ -82,7 +94,10 @@ class App extends Component {
           alert("Unexpected disconnect from the reader");
           this.setState({
             connectionStatus: "not_connected",
-            reader: null
+            reader: null,
+            waitingForExit: false,
+            pendingPaymentIntentId: null,
+            sessionStartTime: null,
           });
         }
       ),
@@ -94,72 +109,27 @@ class App extends Component {
         }
       )
     });
+    // ... (les watchObject restent identiques)
     Logger.watchObject(this.client, "backend", {
-      createConnectionToken: {
-        docsUrl: "https://stripe.com/docs/terminal/sdk/js#connection-token"
-      },
-      registerDevice: {
-        docsUrl:
-          "https://stripe.com/docs/terminal/readers/connecting/verifone-p400#register-reader"
-      },
-      createPaymentIntent: {
-        docsUrl: "https://stripe.com/docs/terminal/payments#create"
-      },
-      capturePaymentIntent: {
-        docsUrl: "https://stripe.com/docs/terminal/payments#capture"
-      },
-      savePaymentMethodToCustomer: {
-        docsUrl: "https://stripe.com/docs/terminal/payments/saving-cards"
-      }
+      createConnectionToken: { docsUrl: "https://stripe.com/docs/terminal/sdk/js#connection-token" },
+      registerDevice: { docsUrl: "https://stripe.com/docs/terminal/readers/connecting/verifone-p400#register-reader" },
+      createPaymentIntent: { docsUrl: "https://stripe.com/docs/terminal/payments#create" },
+      capturePaymentIntent: { docsUrl: "https://stripe.com/docs/terminal/payments#capture" },
+      savePaymentMethodToCustomer: { docsUrl: "https://stripe.com/docs/terminal/payments/saving-cards" }
     });
     Logger.watchObject(this.terminal, "terminal", {
-      discoverReaders: {
-        docsUrl:
-          "https://stripe.com/docs/terminal/js-api-reference#discover-readers"
-      },
-      connectReader: {
-        docsUrl:
-          "https://stripe.com/docs/terminal/js-api-reference#connect-reader"
-      },
-      disconnectReader: {
-        docsUrl: "https://stripe.com/docs/terminal/js-api-reference#disconnect"
-      },
-      setReaderDisplay: {
-        docsUrl:
-          "https://stripe.com/docs/terminal/js-api-reference#set-reader-display"
-      },
-      collectPaymentMethod: {
-        docsUrl:
-          "https://stripe.com/docs/terminal/js-api-reference#collect-payment-method"
-      },
-      cancelCollectPaymentMethod: {
-        docsUrl:
-          "https://stripe.com/docs/terminal/js-api-reference#cancel-collect-payment-method"
-      },
-      processPayment: {
-        docsUrl:
-          "https://stripe.com/docs/terminal/js-api-reference#process-payment"
-      },
-      readReusableCard: {
-        docsUrl:
-          "https://stripe.com/docs/terminal/js-api-reference#read-reusable-card"
-      },
-      cancelReadReusableCard: {
-        docsUrl:
-          "https://stripe.com/docs/terminal/js-api-reference#cancel-read-reusable-card"
-      },
-      collectRefundPaymentMethod: {
-        docsUrl:
-          "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-collectrefundpaymentmethod"
-      },
-      processRefund: {
-        docsUrl:
-          "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-processrefund"
-      },
-      cancelCollectRefundPaymentMethod: {
-        docsUrl:
-          "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-cancelcollectrefundpaymentmethod"
-      }
+      discoverReaders: { docsUrl: "https://stripe.com/docs/terminal/js-api-reference#discover-readers" },
+      connectReader: { docsUrl: "https://stripe.com/docs/terminal/js-api-reference#connect-reader" },
+      disconnectReader: { docsUrl: "https://stripe.com/docs/terminal/js-api-reference#disconnect" },
+      setReaderDisplay: { docsUrl: "https://stripe.com/docs/terminal/js-api-reference#set-reader-display" },
+      collectPaymentMethod: { docsUrl: "https://stripe.com/docs/terminal/js-api-reference#collect-payment-method" },
+      cancelCollectPaymentMethod: { docsUrl: "https://stripe.com/docs/terminal/js-api-reference#cancel-collect-payment-method" },
+      processPayment: { docsUrl: "https://stripe.com/docs/terminal/js-api-reference#process-payment" },
+      readReusableCard: { docsUrl: "https://stripe.com/docs/terminal/js-api-reference#read-reusable-card" },
+      cancelReadReusableCard: { docsUrl: "https://stripe.com/docs/terminal/js-api-reference#cancel-read-reusable-card" },
+      collectRefundPaymentMethod: { docsUrl: "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-collectrefundpaymentmethod" },
+      processRefund: { docsUrl: "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-processrefund" },
+      cancelCollectRefundPaymentMethod: { docsUrl: "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-cancelcollectrefundpaymentmethod" }
     });
   }
 
@@ -205,60 +175,49 @@ class App extends Component {
 
   disconnectReader = async () => {
     await this.terminal.disconnectReader();
-    this.setState({ reader: null });
+    this.setState({ reader: null, waitingForExit: false, pendingPaymentIntentId: null, sessionStartTime: null });
+    if (this.timerInterval) clearInterval(this.timerInterval);
   };
 
   registerAndConnectNewReader = async (label, registrationCode, location) => {
     try {
-      let reader = await this.client.registerDevice({
-        label,
-        registrationCode,
-        location
-      });
+      let reader = await this.client.registerDevice({ label, registrationCode, location });
       await this.connectToReader(reader);
       console.log("Registered and Connected Successfully!");
-    } catch (e) {
-      // Suppress backend errors since they will be shown in logs
-    }
+    } catch (e) {}
   };
 
-  // 3. Terminal Workflows (Once connected to a reader)
+  // 3. Terminal Workflows
   updateLineItems = async () => {
     await this.terminal.setReaderDisplay({
       type: "cart",
       cart: {
-        line_items: [
-          {
-            description: this.state.itemDescription,
-            amount: this.state.chargeAmount,
-            quantity: 1
-          }
-        ],
+        line_items: [{ description: this.state.itemDescription, amount: this.state.chargeAmount, quantity: 1 }],
         tax: this.state.taxAmount,
         total: this.state.chargeAmount + this.state.taxAmount,
         currency: this.state.currency
       }
     });
     console.log("Reader Display Updated!");
-    return;
   };
 
-  // 3b. Collect a card present payment
+  // Collecte du paiement avec préautorisation (sans capture immédiate)
   collectCardPayment = async () => {
-    if (!this.pendingPaymentIntentSecret) {
+    // Créer un PaymentIntent via le backend (avec capture_method: 'manual')
+    if (!this.pendingPaymentIntentId) {
       try {
         let paymentMethodTypes = ["card_present"];
-        if (this.state.currency === "cad") {
-          paymentMethodTypes.push("interac_present");
-        }
+        if (this.state.currency === "cad") paymentMethodTypes.push("interac_present");
         let createIntentResponse = await this.client.createPaymentIntent({
           amount: this.state.chargeAmount + this.state.taxAmount,
           currency: this.state.currency,
-          description: "Test Charge",
+          description: `Qnook - ${this.state.selectedProduct?.name}`,
           paymentMethodTypes
         });
+        // Le backend doit renvoyer le client_secret
         this.pendingPaymentIntentSecret = createIntentResponse.secret;
       } catch (e) {
+        console.error("Erreur création PaymentIntent:", e);
         return;
       }
     }
@@ -267,62 +226,48 @@ class App extends Component {
       testPaymentMethod: this.state.testPaymentMethod,
       testCardNumber: this.state.testCardNumber
     };
-
-    if (this.state.simulateOnReaderTip) {
-      simulatorConfiguration.tipAmount = Number(this.state.tipAmount);
-    }
+    if (this.state.simulateOnReaderTip) simulatorConfiguration.tipAmount = Number(this.state.tipAmount);
 
     this.terminal.setSimulatorConfiguration(simulatorConfiguration);
-    const paymentMethodPromise = this.terminal.collectPaymentMethod(
-      this.pendingPaymentIntentSecret
-    );
+    const paymentMethodPromise = this.terminal.collectPaymentMethod(this.pendingPaymentIntentSecret);
     this.setState({ cancelablePayment: true });
     const result = await paymentMethodPromise;
     if (result.error) {
       console.log("Collect payment method failed:", result.error.message);
+      this.setState({ cancelablePayment: false });
     } else {
-      const confirmResult = await this.terminal.processPayment(
-        result.paymentIntent
-      );
+      const confirmResult = await this.terminal.processPayment(result.paymentIntent);
       this.setState({ cancelablePayment: false });
       if (confirmResult.error) {
         alert(`Confirm failed: ${confirmResult.error.message}`);
       } else if (confirmResult.paymentIntent) {
-        if (confirmResult.paymentIntent.status !== "succeeded") {
-          try {
-            let captureResult = await this.client.capturePaymentIntent({
-              paymentIntentId: confirmResult.paymentIntent.id
-            });
-            this.pendingPaymentIntentSecret = null;
-            console.log("Payment Successful!");
-            // === ALERTE DISTRIBUTION ===
-            alert(`✅ Distribution de ${this.state.selectedProduct?.name} en cours...`);
-            // Retour à la sélection des produits
-            this.setState({ showProductSelection: true, selectedProduct: null });
-            return captureResult;
-          } catch (e) {
-            return;
-          }
-        } else {
-          this.pendingPaymentIntentSecret = null;
-          console.log("Single-message payment successful!");
-          // === ALERTE DISTRIBUTION ===
-          alert(`✅ Distribution de ${this.state.selectedProduct?.name} en cours...`);
-          this.setState({ showProductSelection: true, selectedProduct: null });
-          return confirmResult;
-        }
+        // On ne capture pas tout de suite ! On stocke l'ID et on démarre le timer.
+        this.pendingPaymentIntentId = confirmResult.paymentIntent.id;
+        const startTime = Date.now();
+        this.setState({
+          sessionStartTime: startTime,
+          waitingForExit: true,
+          showProductSelection: false,
+          pendingPaymentIntentSecret: null,
+        });
+        // Démarrer un timer pour afficher le temps écoulé (optionnel)
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.timerInterval = setInterval(() => {
+          this.forceUpdate(); // pour rafraîchir l'affichage du temps
+        }, 1000);
+        console.log("Préautorisation réussie, session commencée à", new Date(startTime).toLocaleTimeString());
       }
     }
   };
 
-  // 3c. Cancel a pending payment.
+  // Annuler le paiement en cours (si jamais)
   cancelPendingPayment = async () => {
     await this.terminal.cancelCollectPaymentMethod();
     this.pendingPaymentIntentSecret = null;
     this.setState({ cancelablePayment: false });
   };
 
-  // 3d. Save a card for re-use online.
+  // Sauvegarder une carte pour réutilisation (non utilisé ici)
   saveCardForFutureUse = async () => {
     const readResult = await this.terminal.readReusableCard();
     if (readResult.error) {
@@ -334,54 +279,92 @@ class App extends Component {
         });
         console.log("Payment method saved to customer!", customer);
         return customer;
-      } catch (e) {
-        return;
-      }
+      } catch (e) {}
     }
   };
 
-  // 3e. collectRefundPaymentMethod
-  collectRefundPaymentMethod = async () => {
-    this.setState({ cancelableRefund: true });
+  // Gestion de la fin de session : calcul du temps réel, du supplément, capture
+  endSession = async () => {
+    if (!this.pendingPaymentIntentId || !this.state.sessionStartTime) {
+      alert("Aucune session en cours");
+      return;
+    }
+
+    const elapsedMs = Date.now() - this.state.sessionStartTime;
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
+    const chosenMinutes = this.state.selectedProduct ? parseInt(this.state.selectedProduct.name.split(' ')[0]) : 0;
+    let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE; // en centimes
+
     try {
-      const readResult = await this.terminal.collectRefundPaymentMethod(
-        this.state.refundedChargeID,
-        this.state.refundedAmount,
-        "cad"
-      );
-      if (readResult.error) {
-        alert(`collectRefundPaymentMethod failed: ${readResult.error.message}`);
-        this.setState({ cancelableRefund: false });
-      } else {
-        const refund = await this.terminal.processRefund();
-        if (refund.error) {
-          alert(`processRefund failed: ${refund.error.message}`);
-        } else {
-          console.log("Charge fully refunded!");
-          this.setState({
-            cancelableRefund: false,
-            refundedAmount: null,
-            refundedChargeID: null
-          });
-          return refund;
+      // 1. Si extraAmount > 0, mettre à jour le PaymentIntent avec le nouveau montant
+      if (extraAmount > 0) {
+        // Cette partie nécessite un endpoint backend /update_payment_intent_amount
+        // Pour l'instant, nous supposons que vous l'avez ajouté. Sinon, on peut capturer
+        // avec le montant original et facturer séparément ? Mieux vaut mettre à jour.
+        // On va appeler un endpoint /update_payment_intent_amount.
+        // Si vous n'avez pas cet endpoint, il faut le créer dans le backend.
+        // Pour simplifier, je crée un appel générique.
+        const updateResponse = await fetch(`${this.state.backendURL}/update_payment_intent_amount`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            payment_intent_id: this.pendingPaymentIntentId,
+            new_amount: this.state.chargeAmount + extraAmount
+          })
+        });
+        if (!updateResponse.ok) {
+          throw new Error("Erreur lors de la mise à jour du montant");
         }
       }
-    } finally {
-      this.setState({ cancelableRefund: false });
+
+      // 2. Capturer le PaymentIntent
+      const captureResponse = await fetch(`${this.state.backendURL}/capture_payment_intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_intent_id: this.pendingPaymentIntentId })
+      });
+      const captureResult = await captureResponse.json();
+      if (captureResponse.ok) {
+        alert(`Session terminée. Temps réel : ${elapsedMinutes} min. Supplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €). Paiement capturé.`);
+        // Réinitialiser l'état
+        if (this.timerInterval) clearInterval(this.timerInterval);
+        this.setState({
+          waitingForExit: false,
+          pendingPaymentIntentId: null,
+          sessionStartTime: null,
+          showProductSelection: true,
+          selectedProduct: null,
+          chargeAmount: 100
+        });
+      } else {
+        alert(`Erreur lors de la capture : ${captureResult.error || "inconnue"}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert(`Erreur : ${err.message}`);
     }
   };
 
-  // 3f. cancelCollectRefundPaymentMethod
-  cancelPendingRefund = async () => {
-    await this.terminal.cancelCollectRefundPaymentMethod();
+  // Annuler la session (par exemple si problème)
+  cancelSession = async () => {
+    // Optionnel : annuler le PaymentIntent côté backend
+    if (this.state.pendingPaymentIntentId) {
+      // Appeler un endpoint /cancel_payment_intent si vous en avez un
+      alert("Session annulée, le paiement n'a pas été capturé.");
+    }
+    if (this.timerInterval) clearInterval(this.timerInterval);
     this.setState({
-      cancelableRefund: false,
-      refundedAmount: null,
-      refundedChargeID: null
+      waitingForExit: false,
+      pendingPaymentIntentId: null,
+      sessionStartTime: null,
+      showProductSelection: true,
+      selectedProduct: null,
+      chargeAmount: 100
     });
   };
 
-  // 4. UI Methods
+  // UI Methods
   onSetBackendURL = url => {
     if (url !== null) {
       window.localStorage.setItem("terminal.backendUrl", url);
@@ -398,7 +381,7 @@ class App extends Component {
       chargeAmount: product.price,
       taxAmount: 0,
       showProductSelection: false,
-      itemDescription: product.name
+      itemDescription: product.name,
     });
   };
 
@@ -406,31 +389,16 @@ class App extends Component {
     this.setState({ chargeAmount: parseInt(amount, 10) });
     this.pendingPaymentIntentSecret = null;
   };
-  updateItemDescription = description =>
-    this.setState({ itemDescription: description });
-  updateTaxAmount = amount =>
-    this.setState({ taxAmount: parseInt(amount || 0, 10) });
+  updateItemDescription = description => this.setState({ itemDescription: description });
+  updateTaxAmount = amount => this.setState({ taxAmount: parseInt(amount || 0, 10) });
   updateCurrency = currency => this.setState({ currency: currency });
   updateRefundChargeID = id => this.setState({ refundedChargeID: id });
-  updateRefundAmount = amount => {
-    this.setState({ refundedAmount: parseInt(amount, 10) });
-  };
+  updateRefundAmount = amount => this.setState({ refundedAmount: parseInt(amount, 10) });
 
-  onChangeTestPaymentMethod = testPaymentMethod => {
-    this.setState({ testPaymentMethod });
-  };
-
-  onChangeTestCardNumber = testCardNumber => {
-    this.setState({ testCardNumber });
-  };
-
-  onChangeTipAmount = (tipAmount) => {
-    this.setState({ tipAmount });
-  };
-
-  onChangeSimulateOnReaderTip = (simulateOnReaderTip) => {
-    this.setState({ simulateOnReaderTip });
-  };
+  onChangeTestPaymentMethod = testPaymentMethod => this.setState({ testPaymentMethod });
+  onChangeTestCardNumber = testCardNumber => this.setState({ testCardNumber });
+  onChangeTipAmount = tipAmount => this.setState({ tipAmount });
+  onChangeSimulateOnReaderTip = simulateOnReaderTip => this.setState({ simulateOnReaderTip });
 
   renderForm() {
     const {
@@ -441,10 +409,12 @@ class App extends Component {
       usingSimulator,
       showProductSelection,
       selectedProduct,
+      waitingForExit,
+      sessionStartTime,
     } = this.state;
 
-    // Écran de sélection des produits (si backend et lecteur sont prêts)
-    if (showProductSelection && backendURL !== null && reader !== null) {
+    // Écran de sélection des produits
+    if (showProductSelection && backendURL !== null && reader !== null && !waitingForExit) {
       return (
         <div>
           <h2 style={{ textAlign: 'center' }}>Choisissez votre durée</h2>
@@ -477,7 +447,7 @@ class App extends Component {
       );
     }
 
-    // Reste de la logique originale
+    // Écran de sélection initiale (URL backend ou connexion lecteur)
     if (backendURL === null && reader === null) {
       return <BackendURLForm onSetBackendURL={this.onSetBackendURL} />;
     } else if (reader === null) {
@@ -492,7 +462,28 @@ class App extends Component {
           listLocations={this.client.listLocations}
         />
       );
+    } else if (waitingForExit) {
+      // Session en cours : afficher le temps écoulé et les boutons de fin
+      const elapsedMs = sessionStartTime ? Date.now() - sessionStartTime : 0;
+      const elapsedMinutes = Math.floor(elapsedMs / 60000);
+      const chosenMinutes = selectedProduct ? parseInt(selectedProduct.name.split(' ')[0]) : 0;
+      const extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+      return (
+        <div style={{ textAlign: 'center' }}>
+          <h2>Session en cours</h2>
+          <p>Produit : {selectedProduct?.name} ({(selectedProduct?.price/100).toFixed(2)} €)</p>
+          <p>Temps écoulé : {elapsedMinutes} min</p>
+          {extraMinutes > 0 && <p>Minutes supplémentaires : {extraMinutes} min ({(extraMinutes * EXTRA_MINUTE_PRICE/100).toFixed(2)} €)</p>}
+          <button onClick={this.endSession} style={{ margin: '10px', padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+            Terminer et payer
+          </button>
+          <button onClick={this.cancelSession} style={{ margin: '10px', padding: '10px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+            Annuler
+          </button>
+        </div>
+      );
     } else {
+      // Écran avec produit sélectionné (avant paiement)
       return (
         <>
           <div style={{ marginBottom: '20px', textAlign: 'center' }}>
@@ -558,6 +549,42 @@ class App extends Component {
     }
   }
 
+  // Méthodes de remboursement (inchangées)
+  collectRefundPaymentMethod = async () => {
+    this.setState({ cancelableRefund: true });
+    try {
+      const readResult = await this.terminal.collectRefundPaymentMethod(
+        this.state.refundedChargeID,
+        this.state.refundedAmount,
+        "cad"
+      );
+      if (readResult.error) {
+        alert(`collectRefundPaymentMethod failed: ${readResult.error.message}`);
+        this.setState({ cancelableRefund: false });
+      } else {
+        const refund = await this.terminal.processRefund();
+        if (refund.error) {
+          alert(`processRefund failed: ${refund.error.message}`);
+        } else {
+          console.log("Charge fully refunded!");
+          this.setState({
+            cancelableRefund: false,
+            refundedAmount: null,
+            refundedChargeID: null
+          });
+          return refund;
+        }
+      }
+    } finally {
+      this.setState({ cancelableRefund: false });
+    }
+  };
+
+  cancelPendingRefund = async () => {
+    await this.terminal.cancelCollectRefundPaymentMethod();
+    this.setState({ cancelableRefund: false, refundedAmount: null, refundedChargeID: null });
+  };
+
   render() {
     const { backendURL, reader } = this.state;
     return (
@@ -584,7 +611,6 @@ class App extends Component {
                   onClickDisconnect={this.disconnectReader}
                 />
               )}
-
               {this.renderForm()}
             </Group>
             <Logs />
