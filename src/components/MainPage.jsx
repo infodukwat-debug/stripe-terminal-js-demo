@@ -14,15 +14,13 @@ import Logs from "../Logs/Logs.jsx";
 
 import { css } from "emotion";
 
-// Liste des produits (durées)
 const products = [
-  { id: 1, name: '1 min', price: 100, image: '🕐' },   // 1,00 €
-  { id: 2, name: '5 mins', price: 500, image: '🕔' },  // 5,00 €
-  { id: 3, name: '15 mins', price: 1200, image: '🕒' }, // 12,00 €
-  { id: 4, name: '30 mins', price: 2000, image: '🕡' }, // 20,00 €
+  { id: 1, name: '1 min', price: 100, image: '🕐' },
+  { id: 2, name: '5 mins', price: 500, image: '🕔' },
+  { id: 3, name: '15 mins', price: 1200, image: '🕒' },
+  { id: 4, name: '30 mins', price: 2000, image: '🕡' },
 ];
 
-// Prix de la minute supplémentaire (en centimes) – non utilisé ici mais conservé
 const EXTRA_MINUTE_PRICE = 100; // 1,00 €
 
 class App extends Component {
@@ -51,7 +49,6 @@ class App extends Component {
       testPaymentMethod: "visa",
       tipAmount: null,
       simulateOnReaderTip: false,
-      // Champs pour la sélection et la session
       selectedProduct: null,
       showProductSelection: true,
       pendingPaymentIntentId: null,
@@ -77,35 +74,30 @@ class App extends Component {
     }
   };
 
- initializeBackendClientAndTerminal(url) {
-  this.client = new Client(url);
-  this.terminal = window.StripeTerminal.create({
-    onFetchConnectionToken: async () => {
-      let connectionTokenResult = await this.client.createConnectionToken();
-      return connectionTokenResult.secret;
-    },
-    onUnexpectedReaderDisconnect: Logger.tracedFn(
-      "onUnexpectedReaderDisconnect",
-      "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-create",
-      () => {
-        alert("Unexpected disconnect from the reader");
-        this.setState({
-          connectionStatus: "not_connected",
-          reader: null
-        });
-      }
-    ),
-    onConnectionStatusChange: Logger.tracedFn(
-      "onConnectionStatusChange",
-      "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-create",
-      ev => {
-        this.setState({ connectionStatus: ev.status, reader: null });
-      }
-    )
-  });
-  // watchObject (si nécessaire)
-}
-    // watchObject (inchangé)
+  initializeBackendClientAndTerminal(url) {
+    this.client = new Client(url);
+    this.terminal = window.StripeTerminal.create({
+      onFetchConnectionToken: async () => {
+        const tokenResult = await this.client.createConnectionToken();
+        return tokenResult.secret;
+      },
+      onUnexpectedReaderDisconnect: Logger.tracedFn(
+        "onUnexpectedReaderDisconnect",
+        "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-create",
+        () => {
+          alert("Unexpected disconnect from the reader");
+          this.setState({ connectionStatus: "not_connected", reader: null });
+        }
+      ),
+      onConnectionStatusChange: Logger.tracedFn(
+        "onConnectionStatusChange",
+        "https://stripe.com/docs/terminal/js-api-reference#stripeterminal-create",
+        ev => {
+          this.setState({ connectionStatus: ev.status, reader: null });
+        }
+      )
+    });
+    // watchObject – garde ceux du dépôt original
     Logger.watchObject(this.client, "backend", {
       createConnectionToken: { docsUrl: "https://stripe.com/docs/terminal/sdk/js#connection-token" },
       registerDevice: { docsUrl: "https://stripe.com/docs/terminal/readers/connecting/verifone-p400#register-reader" },
@@ -135,11 +127,10 @@ class App extends Component {
     if (discoverResult.error) {
       console.log("Failed to discover: ", discoverResult.error);
       return discoverResult.error;
-    } else {
-      if (this.state.discoveryWasCancelled) return;
-      this.setState({ discoveredReaders: discoverResult.discoveredReaders });
-      return discoverResult.discoveredReaders;
     }
+    if (this.state.discoveryWasCancelled) return;
+    this.setState({ discoveredReaders: discoverResult.discoveredReaders });
+    return discoverResult.discoveredReaders;
   };
 
   cancelDiscoverReaders = () => this.setState({ discoveryWasCancelled: true });
@@ -192,10 +183,7 @@ class App extends Component {
   };
 
   collectCardPayment = async () => {
-    if (this.state.paymentInProgress) {
-      console.log("Paiement déjà en cours");
-      return;
-    }
+    if (this.state.paymentInProgress) return;
     this.setState({ paymentInProgress: true });
 
     try {
@@ -273,7 +261,6 @@ class App extends Component {
     }
   };
 
-  // Méthode endSession modifiée : capture directe sans mise à jour du montant
   endSession = async () => {
     if (!this.pendingPaymentIntentId || !this.state.sessionStartTime) {
       alert("Aucune session en cours");
@@ -284,10 +271,9 @@ class App extends Component {
     const elapsedMinutes = Math.floor(elapsedMs / 60000);
     const chosenMinutes = this.state.selectedProduct ? parseInt(this.state.selectedProduct.name.split(' ')[0]) : 0;
     let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
-    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE; // en centimes
+    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
 
     try {
-      // Capture directe (sans mise à jour du montant)
       const captureResponse = await fetch(`${this.state.backendURL}/capture_payment_intent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -295,7 +281,7 @@ class App extends Component {
       });
       const captureResult = await captureResponse.json();
       if (captureResponse.ok) {
-        alert(`Session terminée. Temps réel : ${elapsedMinutes} min. Supplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €). Paiement capturé (montant initial).`);
+        alert(`Session terminée. Temps réel : ${elapsedMinutes} min. Supplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €). Paiement capturé.`);
         if (this.timerInterval) clearInterval(this.timerInterval);
         this.setState({
           waitingForExit: false,
@@ -371,16 +357,6 @@ class App extends Component {
     this.setState({ backendURL: url });
   };
 
-onSetBackendURL = url => {
-  console.log("onSetBackendURL called with", url);
-  if (url !== null) {
-    window.localStorage.setItem("terminal.backendUrl", url);
-  } else {
-    window.localStorage.removeItem("terminal.backendUrl");
-  }
-  this.initializeBackendClientAndTerminal(url);
-  this.setState({ backendURL: url });
-};  
   selectProduct = (product) => {
     this.setState({
       selectedProduct: product,
@@ -462,7 +438,6 @@ onSetBackendURL = url => {
         />
       );
     } else if (waitingForExit) {
-      // Affichage pendant la session
       const elapsedMs = this.state.sessionStartTime ? Date.now() - this.state.sessionStartTime : 0;
       const elapsedMinutes = Math.floor(elapsedMs / 60000);
       const chosenMinutes = selectedProduct ? parseInt(selectedProduct.name.split(' ')[0]) : 0;
@@ -499,9 +474,7 @@ onSetBackendURL = url => {
           </div>
           <CommonWorkflows
             workFlowDisabled={this.isWorkflowDisabled()}
-            onClickCollectCardPayments={() =>
-              this.runWorkflow("collectPayment", this.collectCardPayment)
-            }
+            onClickCollectCardPayments={() => this.runWorkflow("collectPayment", this.collectCardPayment)}
             onClickSaveCardForFutureUse={() => {}}
             onClickCancelPayment={this.cancelPendingPayment}
             onChangeTestPaymentMethod={this.onChangeTestPaymentMethod}
@@ -512,23 +485,17 @@ onSetBackendURL = url => {
             usingSimulator={usingSimulator}
           />
           <RefundForm
-            onClickProcessRefund={() =>
-              this.runWorkflow("collectRefund", this.collectRefundPaymentMethod)
-            }
+            onClickProcessRefund={() => this.runWorkflow("collectRefund", this.collectRefundPaymentMethod)}
             chargeID={this.state.refundedChargeID}
             onChangeChargeID={id => this.updateRefundChargeID(id)}
             refundAmount={this.state.refundedAmount}
             onChangeRefundAmount={amt => this.updateRefundAmount(amt)}
             cancelableRefund={this.state.cancelableRefund}
-            onClickCancelRefund={() =>
-              this.runWorkflow("cancelRefund", this.cancelPendingRefund)
-            }
+            onClickCancelRefund={() => this.runWorkflow("cancelRefund", this.cancelPendingRefund)}
           />
           <CartForm
             workFlowDisabled={this.isWorkflowDisabled()}
-            onClickUpdateLineItems={() =>
-              this.runWorkflow("updateLineItems", this.updateLineItems)
-            }
+            onClickUpdateLineItems={() => this.runWorkflow("updateLineItems", this.updateLineItems)}
             itemDescription={this.state.itemDescription}
             chargeAmount={this.state.chargeAmount}
             taxAmount={this.state.taxAmount}
