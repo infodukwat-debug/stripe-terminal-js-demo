@@ -285,38 +285,44 @@ class App extends Component {
 
   // Gestion de la fin de session : calcul du temps réel, du supplément, capture
   endSession = async () => {
-    if (!this.pendingPaymentIntentId || !this.state.sessionStartTime) {
-      alert("Aucune session en cours");
-      return;
+  if (!this.pendingPaymentIntentId || !this.state.sessionStartTime) {
+    alert("Aucune session en cours");
+    return;
+  }
+
+  const elapsedMs = Date.now() - this.state.sessionStartTime;
+  const elapsedMinutes = Math.floor(elapsedMs / 60000);
+  const chosenMinutes = this.state.selectedProduct ? parseInt(this.state.selectedProduct.name.split(' ')[0]) : 0;
+  let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+  const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE; // en centimes
+
+  try {
+    // Capture directe (sans mise à jour du montant)
+    const captureResponse = await fetch(`${this.state.backendURL}/capture_payment_intent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payment_intent_id: this.pendingPaymentIntentId })
+    });
+    const captureResult = await captureResponse.json();
+    if (captureResponse.ok) {
+      alert(`Session terminée. Temps réel : ${elapsedMinutes} min. Supplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €). Paiement capturé (montant initial).`);
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.setState({
+        waitingForExit: false,
+        pendingPaymentIntentId: null,
+        sessionStartTime: null,
+        showProductSelection: true,
+        selectedProduct: null,
+        chargeAmount: 100
+      });
+    } else {
+      alert(`Erreur lors de la capture : ${captureResult.error || "inconnue"}`);
     }
-
-    const elapsedMs = Date.now() - this.state.sessionStartTime;
-    const elapsedMinutes = Math.floor(elapsedMs / 60000);
-    const chosenMinutes = this.state.selectedProduct ? parseInt(this.state.selectedProduct.name.split(' ')[0]) : 0;
-    let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
-    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE; // en centimes
-
-    try {
-      // 1. Si extraAmount > 0, mettre à jour le PaymentIntent avec le nouveau montant
-      if (extraAmount > 0) {
-        // Cette partie nécessite un endpoint backend /update_payment_intent_amount
-        // Pour l'instant, nous supposons que vous l'avez ajouté. Sinon, on peut capturer
-        // avec le montant original et facturer séparément ? Mieux vaut mettre à jour.
-        // On va appeler un endpoint /update_payment_intent_amount.
-        // Si vous n'avez pas cet endpoint, il faut le créer dans le backend.
-        // Pour simplifier, je crée un appel générique.
-        const updateResponse = await fetch(`${this.state.backendURL}/update_payment_intent_amount`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            payment_intent_id: this.pendingPaymentIntentId,
-            new_amount: this.state.chargeAmount + extraAmount
-          })
-        });
-        if (!updateResponse.ok) {
-          throw new Error("Erreur lors de la mise à jour du montant");
-        }
-      }
+  } catch (err) {
+    console.error(err);
+    alert(`Erreur : ${err.message}`);
+  }
+};
 
       // 2. Capturer le PaymentIntent
       const captureResponse = await fetch(`${this.state.backendURL}/capture_payment_intent`, {
