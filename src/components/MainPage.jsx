@@ -1,7 +1,7 @@
 import React, { Component } from "react";
 
 import Client from "../client";
-import Logger from "../ logger";
+import Logger from "../logger";
 
 import BackendURLForm from "../Forms/BackendURLForm.jsx";
 import CommonWorkflows from "../Forms/CommonWorkflows.jsx";
@@ -97,7 +97,6 @@ class App extends Component {
         }
       )
     });
-    // watchObject – garde ceux du dépôt original
     Logger.watchObject(this.client, "backend", {
       createConnectionToken: { docsUrl: "https://stripe.com/docs/terminal/sdk/js#connection-token" },
       registerDevice: { docsUrl: "https://stripe.com/docs/terminal/readers/connecting/verifone-p400#register-reader" },
