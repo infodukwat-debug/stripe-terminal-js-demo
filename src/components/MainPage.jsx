@@ -78,6 +78,12 @@ class App extends Component {
   };
 
   initializeBackendClientAndTerminal(url) {
+
+    initializeBackendClientAndTerminal(url) {
+  console.log("initializeBackendClientAndTerminal with", url);
+  this.client = new Client(url);
+  // ... le reste du code inchangé
+}
     this.client = new Client(url);
     this.terminal = window.StripeTerminal.create({
       onFetchConnectionToken: async () => {
@@ -366,6 +372,16 @@ class App extends Component {
     this.setState({ backendURL: url });
   };
 
+onSetBackendURL = url => {
+  console.log("onSetBackendURL called with", url);
+  if (url !== null) {
+    window.localStorage.setItem("terminal.backendUrl", url);
+  } else {
+    window.localStorage.removeItem("terminal.backendUrl");
+  }
+  this.initializeBackendClientAndTerminal(url);
+  this.setState({ backendURL: url });
+};  
   selectProduct = (product) => {
     this.setState({
       selectedProduct: product,
