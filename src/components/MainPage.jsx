@@ -182,25 +182,20 @@ class App extends Component {
   };
 
   collectCardPayment = async () => {
-    console.log("=== collectCardPayment START ===");
-    if (this.state.paymentInProgress) {
-      console.log("Paiement déjà en cours, abandon");
-      return;
-    }
+    if (this.state.paymentInProgress) return;
     this.setState({ paymentInProgress: true });
 
     try {
       let paymentMethodTypes = ["card_present"];
       if (this.state.currency === "cad") paymentMethodTypes.push("interac_present");
-      console.log("Création du PaymentIntent avec amount:", this.state.chargeAmount + this.state.taxAmount);
       const createIntentResponse = await this.client.createPaymentIntent({
         amount: this.state.chargeAmount + this.state.taxAmount,
         currency: this.state.currency,
         description: `Qnook - ${this.state.selectedProduct?.name}`,
         paymentMethodTypes
       });
-      const clientSecret = createIntentResponse.secret;
-      console.log("clientSecret reçu:", clientSecret);
+      // Correction : utiliser client_secret, pas secret
+      const clientSecret = createIntentResponse.client_secret;
 
       const simulatorConfiguration = {
         testPaymentMethod: this.state.testPaymentMethod,
@@ -210,18 +205,14 @@ class App extends Component {
       this.terminal.setSimulatorConfiguration(simulatorConfiguration);
 
       this.setState({ cancelablePayment: true });
-      console.log("Appel de collectPaymentMethod...");
       const collectResult = await this.terminal.collectPaymentMethod(clientSecret);
-      console.log("collectPaymentMethod result:", collectResult);
       if (collectResult.error) {
         console.log("Collect payment method failed:", collectResult.error.message);
         this.setState({ cancelablePayment: false, paymentInProgress: false });
         return;
       }
 
-      console.log("Appel de processPayment...");
       const confirmResult = await this.terminal.processPayment(collectResult.paymentIntent);
-      console.log("processPayment result:", confirmResult);
       this.setState({ cancelablePayment: false });
       if (confirmResult.error) {
         alert(`Confirm failed: ${confirmResult.error.message}`);
@@ -230,7 +221,6 @@ class App extends Component {
       }
 
       if (confirmResult.paymentIntent) {
-        console.log("PaymentIntent confirmé, démarrage session");
         this.pendingPaymentIntentId = confirmResult.paymentIntent.id;
         const startTime = Date.now();
         this.setState({
@@ -243,14 +233,11 @@ class App extends Component {
         if (this.timerInterval) clearInterval(this.timerInterval);
         this.timerInterval = setInterval(() => this.forceUpdate(), 1000);
         console.log("Préautorisation réussie, session commencée à", new Date(startTime).toLocaleTimeString());
-      } else {
-        console.log("Aucun PaymentIntent dans confirmResult");
       }
     } catch (err) {
-      console.error("Erreur inattendue dans collectCardPayment:", err);
+      console.error("Erreur dans collectCardPayment:", err);
       this.setState({ paymentInProgress: false });
     }
-    console.log("=== collectCardPayment END ===");
   };
 
   cancelPendingPayment = async () => {
