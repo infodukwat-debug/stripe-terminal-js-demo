@@ -49,10 +49,8 @@ class App extends Component {
       paymentInProgress: false,
       showEmailForm: false,
       wantReceipt: false,
-      wantNotification: false,
       customerEmail: "",
       emailSubmitted: false,
-      // Liste des produits chargée depuis le backend
       products: [],
     };
     this.timerInterval = null;
@@ -66,7 +64,6 @@ class App extends Component {
     if (this.timerInterval) clearInterval(this.timerInterval);
   }
 
-  // Charger les produits depuis le backend
   loadProducts = async () => {
     const { backendURL } = this.state;
     if (!backendURL) return;
@@ -205,7 +202,6 @@ class App extends Component {
       showProductSelection: false,
       showEmailForm: true,
       wantReceipt: false,
-      wantNotification: false,
       customerEmail: "",
       emailSubmitted: false,
     });
@@ -215,18 +211,14 @@ class App extends Component {
     this.setState({ wantReceipt: e.target.checked });
   };
 
-  handleWantNotificationChange = (e) => {
-    this.setState({ wantNotification: e.target.checked });
-  };
-
   handleEmailChange = (e) => {
     this.setState({ customerEmail: e.target.value });
   };
 
   submitEmailForm = () => {
-    const { wantReceipt, wantNotification, customerEmail } = this.state;
-    if ((wantReceipt || wantNotification) && !customerEmail) {
-      alert("Veuillez saisir une adresse email.");
+    const { wantReceipt, customerEmail } = this.state;
+    if (wantReceipt && !customerEmail) {
+      alert("Veuillez saisir une adresse email pour recevoir le reçu.");
       return;
     }
     this.setState({ emailSubmitted: true });
@@ -274,7 +266,8 @@ class App extends Component {
         amount: totalAmount,
         currency: this.state.currency,
         description: description,
-        paymentMethodTypes: ["card_present"]
+        paymentMethodTypes: ["card_present"],
+        email: this.state.wantReceipt ? this.state.customerEmail : undefined
       });
       const clientSecret = createIntentResponse.client_secret;
 
@@ -293,30 +286,6 @@ class App extends Component {
       const confirmResult = await this.terminal.processPayment(collectResult.paymentIntent);
       if (confirmResult.error) {
         throw new Error(`processPayment failed: ${confirmResult.error.message}`);
-      }
-
-      const { wantReceipt, wantNotification, customerEmail } = this.state;
-      if ((wantReceipt || wantNotification) && customerEmail) {
-        try {
-          await fetch(`${this.state.backendURL}/send_emails`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: customerEmail,
-              wantReceipt,
-              wantNotification,
-              productName: this.state.selectedProduct.name,
-              durationChosen: chosenMinutes,
-              actualDuration: elapsedMinutes,
-              extraMinutes: extraMinutes,
-              totalAmount: totalAmount / 100,
-              currency: this.state.currency,
-              paymentIntentId: confirmResult.paymentIntent.id,
-            })
-          });
-        } catch (emailErr) {
-          console.error("Erreur envoi email:", emailErr);
-        }
       }
 
       alert(`Paiement réussi !\nTemps réel : ${elapsedMinutes} min\nSupplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\nTotal : ${(totalAmount/100).toFixed(2)} €`);
@@ -395,7 +364,7 @@ class App extends Component {
     }
     this.initializeBackendClientAndTerminal(url);
     this.setState({ backendURL: url }, () => {
-      this.loadProducts(); // Recharge les produits quand l'URL change
+      this.loadProducts();
     });
   };
 
@@ -413,7 +382,6 @@ class App extends Component {
   onChangeTipAmount = tipAmount => this.setState({ tipAmount });
   onChangeSimulateOnReaderTip = simulateOnReaderTip => this.setState({ simulateOnReaderTip });
 
-  // Affiche le prix avec gestion de promotion
   renderPrice(product) {
     if (product.promo && product.promo.type === "percent") {
       const finalPrice = product.price * (1 - product.promo.value / 100);
@@ -450,7 +418,6 @@ class App extends Component {
       paymentInProgress,
       showEmailForm,
       wantReceipt,
-      wantNotification,
       customerEmail,
       emailSubmitted,
       products,
@@ -501,13 +468,7 @@ class App extends Component {
               Recevoir le reçu final par email
             </label>
           </div>
-          <div style={{ marginBottom: '10px' }}>
-            <label>
-              <input type="checkbox" checked={wantNotification} onChange={this.handleWantNotificationChange} />
-              Être prévenu par email à la fin du temps choisi
-            </label>
-          </div>
-          {(wantReceipt || wantNotification) && (
+          {wantReceipt && (
             <div style={{ marginBottom: '10px' }}>
               <label>Adresse email :</label>
               <input type="email" value={customerEmail} onChange={this.handleEmailChange} style={{ width: '100%', padding: '8px', marginTop: '5px' }} />
