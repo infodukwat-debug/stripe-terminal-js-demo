@@ -55,6 +55,7 @@ class App extends Component {
       sessionStartTime: null,
       waitingForExit: false,
       paymentInProgress: false,
+      capturingInProgress: false,
     };
     this.timerInterval = null;
   }
@@ -194,7 +195,6 @@ class App extends Component {
         description: `Qnook - ${this.state.selectedProduct?.name}`,
         paymentMethodTypes
       });
-      // Correction : utiliser client_secret, pas secret
       const clientSecret = createIntentResponse.client_secret;
 
       const simulatorConfiguration = {
@@ -227,7 +227,6 @@ class App extends Component {
           sessionStartTime: startTime,
           waitingForExit: true,
           showProductSelection: false,
-          pendingPaymentIntentSecret: null,
           paymentInProgress: false,
         });
         if (this.timerInterval) clearInterval(this.timerInterval);
@@ -242,7 +241,6 @@ class App extends Component {
 
   cancelPendingPayment = async () => {
     await this.terminal.cancelCollectPaymentMethod();
-    this.pendingPaymentIntentSecret = null;
     this.setState({ cancelablePayment: false });
   };
 
@@ -262,10 +260,13 @@ class App extends Component {
   };
 
   endSession = async () => {
+    if (this.state.capturingInProgress) return;
     if (!this.pendingPaymentIntentId || !this.state.sessionStartTime) {
       alert("Aucune session en cours");
       return;
     }
+
+    this.setState({ capturingInProgress: true });
 
     const elapsedMs = Date.now() - this.state.sessionStartTime;
     const elapsedMinutes = Math.floor(elapsedMs / 60000);
@@ -273,15 +274,47 @@ class App extends Component {
     let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
     const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
 
+    const initialAmount = this.state.chargeAmount;
+    const totalAmount = initialAmount + extraAmount;
+
+    console.log("--- endSession ---");
+    console.log("temps écoulé (min) :", elapsedMinutes);
+    console.log("temps choisi (min) :", chosenMinutes);
+    console.log("minutes supp. :", extraMinutes);
+    console.log("montant initial (centimes) :", initialAmount);
+    console.log("montant supplément (centimes) :", extraAmount);
+    console.log("montant total (centimes) :", totalAmount);
+
     try {
+      if (extraAmount > 0) {
+        console.log("Appel update_payment_intent_amount...");
+        const updateResponse = await fetch(`${this.state.backendURL}/update_payment_intent_amount`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            payment_intent_id: this.pendingPaymentIntentId,
+            new_amount: totalAmount
+          })
+        });
+        const updateResult = await updateResponse.json();
+        console.log("Réponse update :", updateResult);
+        if (!updateResponse.ok) {
+          throw new Error(updateResult.error || 'Erreur lors de la mise à jour du montant');
+        }
+      } else {
+        console.log("Pas de supplément, mise à jour du montant sautée");
+      }
+
+      console.log("Appel capture_payment_intent...");
       const captureResponse = await fetch(`${this.state.backendURL}/capture_payment_intent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ payment_intent_id: this.pendingPaymentIntentId })
       });
       const captureResult = await captureResponse.json();
+      console.log("Réponse capture :", captureResult);
       if (captureResponse.ok) {
-        alert(`Session terminée. Temps réel : ${elapsedMinutes} min. Supplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €). Paiement capturé.`);
+        alert(`Session terminée. Temps réel : ${elapsedMinutes} min. Supplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €). Total facturé : ${(totalAmount/100).toFixed(2)} €.`);
         if (this.timerInterval) clearInterval(this.timerInterval);
         this.setState({
           waitingForExit: false,
@@ -289,14 +322,17 @@ class App extends Component {
           sessionStartTime: null,
           showProductSelection: true,
           selectedProduct: null,
-          chargeAmount: 100
+          chargeAmount: 100,
+          capturingInProgress: false
         });
       } else {
         alert(`Erreur lors de la capture : ${captureResult.error || "inconnue"}`);
+        this.setState({ capturingInProgress: false });
       }
     } catch (err) {
-      console.error(err);
+      console.error("Erreur endSession:", err);
       alert(`Erreur : ${err.message}`);
+      this.setState({ capturingInProgress: false });
     }
   };
 
@@ -308,7 +344,8 @@ class App extends Component {
       sessionStartTime: null,
       showProductSelection: true,
       selectedProduct: null,
-      chargeAmount: 100
+      chargeAmount: 100,
+      capturingInProgress: false
     });
   };
 
@@ -448,7 +485,7 @@ class App extends Component {
           <p>Produit : {selectedProduct?.name} ({(selectedProduct?.price/100).toFixed(2)} €)</p>
           <p>Temps écoulé : {elapsedMinutes} min</p>
           {extraMinutes > 0 && <p>Minutes supplémentaires : {extraMinutes} min ({(extraMinutes * EXTRA_MINUTE_PRICE/100).toFixed(2)} €)</p>}
-          <button onClick={this.endSession} style={{ margin: '10px', padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          <button onClick={this.endSession} disabled={this.state.capturingInProgress} style={{ margin: '10px', padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
             Terminer et payer
           </button>
           <button onClick={this.cancelSession} style={{ margin: '10px', padding: '10px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
