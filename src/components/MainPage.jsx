@@ -54,7 +54,6 @@ class App extends Component {
       sessionStartTime: null,
       sessionActive: false,
       paymentInProgress: false,
-      // Nouveaux champs pour les préférences email
       showEmailForm: false,
       wantReceipt: false,
       wantNotification: false,
@@ -186,7 +185,6 @@ class App extends Component {
     console.log("Reader Display Updated!");
   };
 
-  // Après le choix du produit, afficher le formulaire email
   selectProduct = (product) => {
     this.setState({
       selectedProduct: product,
@@ -200,7 +198,6 @@ class App extends Component {
     });
   };
 
-  // Gestion des cases à cocher
   handleWantReceiptChange = (e) => {
     this.setState({ wantReceipt: e.target.checked });
   };
@@ -213,7 +210,6 @@ class App extends Component {
     this.setState({ customerEmail: e.target.value });
   };
 
-  // Validation du formulaire email
   submitEmailForm = () => {
     const { wantReceipt, wantNotification, customerEmail } = this.state;
     if ((wantReceipt || wantNotification) && !customerEmail) {
@@ -221,7 +217,6 @@ class App extends Component {
       return;
     }
     this.setState({ emailSubmitted: true });
-    // Démarrer la session (lancement du chronomètre)
     const startTime = Date.now();
     this.setState({
       sessionStartTime: startTime,
@@ -230,10 +225,16 @@ class App extends Component {
     });
     if (this.timerInterval) clearInterval(this.timerInterval);
     this.timerInterval = setInterval(() => this.forceUpdate(), 1000);
-    // TODO: Envoyer au backend les préférences email pour traitement ultérieur (envoi de notification à la fin)
   };
 
-  // Terminer la session
+  cancelEmailForm = () => {
+    this.setState({
+      showProductSelection: true,
+      selectedProduct: null,
+      showEmailForm: false,
+    });
+  };
+
   endSession = async () => {
     if (this.state.paymentInProgress) return;
     if (!this.state.sessionStartTime || !this.state.selectedProduct) {
@@ -254,13 +255,6 @@ class App extends Component {
 
     let extraText = extraMinutes > 0 ? ` + ${extraMinutes} min supp` : '';
     const description = `Qnook - ${this.state.selectedProduct.name}${extraText}`;
-
-    console.log("--- endSession ---");
-    console.log("temps écoulé (min) :", elapsedMinutes);
-    console.log("temps choisi (min) :", chosenMinutes);
-    console.log("minutes supp. :", extraMinutes);
-    console.log("montant total (centimes) :", totalAmount);
-    console.log("description :", description);
 
     try {
       const createIntentResponse = await this.client.createPaymentIntent({
@@ -288,10 +282,8 @@ class App extends Component {
         throw new Error(`processPayment failed: ${confirmResult.error.message}`);
       }
 
-      // Paiement réussi : envoyer les emails si demandé
       const { wantReceipt, wantNotification, customerEmail } = this.state;
       if ((wantReceipt || wantNotification) && customerEmail) {
-        // Appel au backend pour envoyer les emails
         try {
           await fetch(`${this.state.backendURL}/send_emails`, {
             method: 'POST',
@@ -311,7 +303,6 @@ class App extends Component {
           });
         } catch (emailErr) {
           console.error("Erreur envoi email:", emailErr);
-          // Ne pas bloquer la fin de session
         }
       }
 
@@ -345,15 +336,6 @@ class App extends Component {
       paymentInProgress: false,
       showEmailForm: false,
       emailSubmitted: false,
-    });
-  };
-
-  // Annulation depuis le formulaire email
-  cancelEmailForm = () => {
-    this.setState({
-      showProductSelection: true,
-      selectedProduct: null,
-      showEmailForm: false,
     });
   };
 
@@ -434,7 +416,6 @@ class App extends Component {
       emailSubmitted,
     } = this.state;
 
-    // Écran de sélection des produits
     if (showProductSelection && backendURL !== null && reader !== null && !sessionActive && !showEmailForm) {
       return (
         <div>
@@ -465,7 +446,6 @@ class App extends Component {
       );
     }
 
-    // Formulaire email
     if (showEmailForm && !emailSubmitted) {
       return (
         <div style={{ maxWidth: '500px', margin: '0 auto', padding: '20px', border: '1px solid #ccc', borderRadius: '10px' }}>
@@ -502,7 +482,6 @@ class App extends Component {
       );
     }
 
-    // Connexion initiale (backend URL)
     if (backendURL === null && reader === null) {
       return <BackendURLForm onSetBackendURL={this.onSetBackendURL} />;
     } else if (reader === null) {
