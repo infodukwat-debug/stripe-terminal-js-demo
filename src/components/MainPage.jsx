@@ -54,6 +54,12 @@ class App extends Component {
       sessionStartTime: null,
       sessionActive: false,
       paymentInProgress: false,
+      // Nouveaux champs pour les préférences email
+      showEmailForm: false,
+      wantReceipt: false,
+      wantNotification: false,
+      customerEmail: "",
+      emailSubmitted: false,
     };
     this.timerInterval = null;
   }
@@ -180,19 +186,54 @@ class App extends Component {
     console.log("Reader Display Updated!");
   };
 
-  startSession = (product) => {
-    const startTime = Date.now();
+  // Après le choix du produit, afficher le formulaire email
+  selectProduct = (product) => {
     this.setState({
       selectedProduct: product,
       chargeAmount: product.price,
+      showProductSelection: false,
+      showEmailForm: true,
+      wantReceipt: false,
+      wantNotification: false,
+      customerEmail: "",
+      emailSubmitted: false,
+    });
+  };
+
+  // Gestion des cases à cocher
+  handleWantReceiptChange = (e) => {
+    this.setState({ wantReceipt: e.target.checked });
+  };
+
+  handleWantNotificationChange = (e) => {
+    this.setState({ wantNotification: e.target.checked });
+  };
+
+  handleEmailChange = (e) => {
+    this.setState({ customerEmail: e.target.value });
+  };
+
+  // Validation du formulaire email
+  submitEmailForm = () => {
+    const { wantReceipt, wantNotification, customerEmail } = this.state;
+    if ((wantReceipt || wantNotification) && !customerEmail) {
+      alert("Veuillez saisir une adresse email.");
+      return;
+    }
+    this.setState({ emailSubmitted: true });
+    // Démarrer la session (lancement du chronomètre)
+    const startTime = Date.now();
+    this.setState({
       sessionStartTime: startTime,
       sessionActive: true,
-      showProductSelection: false,
+      showEmailForm: false,
     });
     if (this.timerInterval) clearInterval(this.timerInterval);
     this.timerInterval = setInterval(() => this.forceUpdate(), 1000);
+    // TODO: Envoyer au backend les préférences email pour traitement ultérieur (envoi de notification à la fin)
   };
 
+  // Terminer la session
   endSession = async () => {
     if (this.state.paymentInProgress) return;
     if (!this.state.sessionStartTime || !this.state.selectedProduct) {
@@ -211,7 +252,6 @@ class App extends Component {
     const initialAmount = this.state.chargeAmount;
     const totalAmount = initialAmount + extraAmount;
 
-    // Construction de la description avec le supplément
     let extraText = extraMinutes > 0 ? ` + ${extraMinutes} min supp` : '';
     const description = `Qnook - ${this.state.selectedProduct.name}${extraText}`;
 
@@ -248,6 +288,33 @@ class App extends Component {
         throw new Error(`processPayment failed: ${confirmResult.error.message}`);
       }
 
+      // Paiement réussi : envoyer les emails si demandé
+      const { wantReceipt, wantNotification, customerEmail } = this.state;
+      if ((wantReceipt || wantNotification) && customerEmail) {
+        // Appel au backend pour envoyer les emails
+        try {
+          await fetch(`${this.state.backendURL}/send_emails`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: customerEmail,
+              wantReceipt,
+              wantNotification,
+              productName: this.state.selectedProduct.name,
+              durationChosen: chosenMinutes,
+              actualDuration: elapsedMinutes,
+              extraMinutes: extraMinutes,
+              totalAmount: totalAmount / 100,
+              currency: this.state.currency,
+              paymentIntentId: confirmResult.paymentIntent.id,
+            })
+          });
+        } catch (emailErr) {
+          console.error("Erreur envoi email:", emailErr);
+          // Ne pas bloquer la fin de session
+        }
+      }
+
       alert(`Paiement réussi !\nTemps réel : ${elapsedMinutes} min\nSupplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\nTotal : ${(totalAmount/100).toFixed(2)} €`);
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.setState({
@@ -257,6 +324,8 @@ class App extends Component {
         selectedProduct: null,
         chargeAmount: 100,
         paymentInProgress: false,
+        showEmailForm: false,
+        emailSubmitted: false,
       });
     } catch (err) {
       console.error("Erreur endSession:", err);
@@ -274,6 +343,17 @@ class App extends Component {
       selectedProduct: null,
       chargeAmount: 100,
       paymentInProgress: false,
+      showEmailForm: false,
+      emailSubmitted: false,
+    });
+  };
+
+  // Annulation depuis le formulaire email
+  cancelEmailForm = () => {
+    this.setState({
+      showProductSelection: true,
+      selectedProduct: null,
+      showEmailForm: false,
     });
   };
 
@@ -347,9 +427,15 @@ class App extends Component {
       selectedProduct,
       sessionActive,
       paymentInProgress,
+      showEmailForm,
+      wantReceipt,
+      wantNotification,
+      customerEmail,
+      emailSubmitted,
     } = this.state;
 
-    if (showProductSelection && backendURL !== null && reader !== null && !sessionActive) {
+    // Écran de sélection des produits
+    if (showProductSelection && backendURL !== null && reader !== null && !sessionActive && !showEmailForm) {
       return (
         <div>
           <h2 style={{ textAlign: 'center' }}>Choisissez votre durée</h2>
@@ -357,7 +443,7 @@ class App extends Component {
             {products.map(product => (
               <button
                 key={product.id}
-                onClick={() => this.startSession(product)}
+                onClick={() => this.selectProduct(product)}
                 style={{
                   width: '150px',
                   padding: '20px',
@@ -379,6 +465,44 @@ class App extends Component {
       );
     }
 
+    // Formulaire email
+    if (showEmailForm && !emailSubmitted) {
+      return (
+        <div style={{ maxWidth: '500px', margin: '0 auto', padding: '20px', border: '1px solid #ccc', borderRadius: '10px' }}>
+          <h2>Options de la session</h2>
+          <p>Vous avez choisi : <strong>{selectedProduct?.name} ({(selectedProduct?.price/100).toFixed(2)} €)</strong></p>
+          <p><strong>Information :</strong> Tout dépassement de la durée choisie sera facturé <strong>1€ par minute supplémentaire</strong>.</p>
+          <div style={{ marginBottom: '10px' }}>
+            <label>
+              <input type="checkbox" checked={wantReceipt} onChange={this.handleWantReceiptChange} />
+              Recevoir le reçu final par email
+            </label>
+          </div>
+          <div style={{ marginBottom: '10px' }}>
+            <label>
+              <input type="checkbox" checked={wantNotification} onChange={this.handleWantNotificationChange} />
+              Être prévenu par email à la fin du temps choisi
+            </label>
+          </div>
+          {(wantReceipt || wantNotification) && (
+            <div style={{ marginBottom: '10px' }}>
+              <label>Adresse email :</label>
+              <input type="email" value={customerEmail} onChange={this.handleEmailChange} style={{ width: '100%', padding: '8px', marginTop: '5px' }} />
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+            <button onClick={this.submitEmailForm} style={{ padding: '10px 20px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+              Démarrer la session
+            </button>
+            <button onClick={this.cancelEmailForm} style={{ padding: '10px 20px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+              Annuler
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Connexion initiale (backend URL)
     if (backendURL === null && reader === null) {
       return <BackendURLForm onSetBackendURL={this.onSetBackendURL} />;
     } else if (reader === null) {
