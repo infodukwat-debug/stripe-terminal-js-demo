@@ -14,13 +14,6 @@ import Logs from "../Logs/Logs.jsx";
 
 import { css } from "emotion";
 
-const products = [
-  { id: 1, name: '1 min', price: 100, image: '🕐' },
-  { id: 2, name: '5 mins', price: 500, image: '🕔' },
-  { id: 3, name: '15 mins', price: 1200, image: '🕒' },
-  { id: 4, name: '30 mins', price: 2000, image: '🕡' },
-];
-
 const EXTRA_MINUTE_PRICE = 100; // 1,00 €
 
 class App extends Component {
@@ -59,13 +52,33 @@ class App extends Component {
       wantNotification: false,
       customerEmail: "",
       emailSubmitted: false,
+      // Liste des produits chargée depuis le backend
+      products: [],
     };
     this.timerInterval = null;
+  }
+
+  componentDidMount() {
+    this.loadProducts();
   }
 
   componentWillUnmount() {
     if (this.timerInterval) clearInterval(this.timerInterval);
   }
+
+  // Charger les produits depuis le backend
+  loadProducts = async () => {
+    const { backendURL } = this.state;
+    if (!backendURL) return;
+    try {
+      const response = await fetch(`${backendURL}/api/products`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      this.setState({ products: data });
+    } catch (err) {
+      console.error("Erreur chargement produits:", err);
+    }
+  };
 
   isWorkflowDisabled = () => this.state.cancelablePayment || this.state.workFlowInProgress;
 
@@ -381,7 +394,9 @@ class App extends Component {
       window.localStorage.removeItem("terminal.backendUrl");
     }
     this.initializeBackendClientAndTerminal(url);
-    this.setState({ backendURL: url });
+    this.setState({ backendURL: url }, () => {
+      this.loadProducts(); // Recharge les produits quand l'URL change
+    });
   };
 
   updateChargeAmount = amount => {
@@ -397,6 +412,30 @@ class App extends Component {
   onChangeTestCardNumber = testCardNumber => this.setState({ testCardNumber });
   onChangeTipAmount = tipAmount => this.setState({ tipAmount });
   onChangeSimulateOnReaderTip = simulateOnReaderTip => this.setState({ simulateOnReaderTip });
+
+  // Affiche le prix avec gestion de promotion
+  renderPrice(product) {
+    if (product.promo && product.promo.type === "percent") {
+      const finalPrice = product.price * (1 - product.promo.value / 100);
+      return (
+        <span>
+          <span style={{ textDecoration: 'line-through', fontSize: '0.8rem' }}>{(product.price / 100).toFixed(2)} €</span>
+          {' '}
+          <span style={{ color: 'red', fontWeight: 'bold' }}>{(finalPrice / 100).toFixed(2)} €</span>
+        </span>
+      );
+    } else if (product.promo && product.promo.type === "fixed") {
+      const finalPrice = Math.max(0, product.price - product.promo.value);
+      return (
+        <span>
+          <span style={{ textDecoration: 'line-through', fontSize: '0.8rem' }}>{(product.price / 100).toFixed(2)} €</span>
+          {' '}
+          <span style={{ color: 'red', fontWeight: 'bold' }}>{(finalPrice / 100).toFixed(2)} €</span>
+        </span>
+      );
+    }
+    return <span>{(product.price / 100).toFixed(2)} €</span>;
+  }
 
   renderForm() {
     const {
@@ -414,9 +453,13 @@ class App extends Component {
       wantNotification,
       customerEmail,
       emailSubmitted,
+      products,
     } = this.state;
 
     if (showProductSelection && backendURL !== null && reader !== null && !sessionActive && !showEmailForm) {
+      if (products.length === 0) {
+        return <div>Chargement des produits...</div>;
+      }
       return (
         <div>
           <h2 style={{ textAlign: 'center' }}>Choisissez votre durée</h2>
@@ -436,9 +479,9 @@ class App extends Component {
                   textAlign: 'center',
                 }}
               >
-                <div style={{ fontSize: '3rem' }}>{product.image}</div>
+                <div style={{ fontSize: '3rem' }}>{product.image || '🕐'}</div>
                 <div>{product.name}</div>
-                <div>{(product.price / 100).toFixed(2)} €</div>
+                <div>{this.renderPrice(product)}</div>
               </button>
             ))}
           </div>
@@ -450,7 +493,7 @@ class App extends Component {
       return (
         <div style={{ maxWidth: '500px', margin: '0 auto', padding: '20px', border: '1px solid #ccc', borderRadius: '10px' }}>
           <h2>Options de la session</h2>
-          <p>Vous avez choisi : <strong>{selectedProduct?.name} ({(selectedProduct?.price/100).toFixed(2)} €)</strong></p>
+          <p>Vous avez choisi : <strong>{selectedProduct?.name} ({this.renderPrice(selectedProduct)})</strong></p>
           <p><strong>Information :</strong> Tout dépassement de la durée choisie sera facturé <strong>1€ par minute supplémentaire</strong>.</p>
           <div style={{ marginBottom: '10px' }}>
             <label>
@@ -504,7 +547,7 @@ class App extends Component {
       return (
         <div style={{ textAlign: 'center' }}>
           <h2>Session en cours</h2>
-          <p>Produit : {selectedProduct?.name} ({(selectedProduct?.price/100).toFixed(2)} €)</p>
+          <p>Produit : {selectedProduct?.name} ({this.renderPrice(selectedProduct)})</p>
           <p>Temps écoulé : {elapsedMinutes} min</p>
           {extraMinutes > 0 && <p>Minutes supplémentaires : {extraMinutes} min ({(extraMinutes * EXTRA_MINUTE_PRICE/100).toFixed(2)} €)</p>}
           <button onClick={this.endSession} disabled={paymentInProgress} style={{ margin: '10px', padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
