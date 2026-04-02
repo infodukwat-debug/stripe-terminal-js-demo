@@ -1,4 +1,3 @@
-// Client for the example terminal backend
 class Client {
   constructor(url) {
     this.url = url;
@@ -18,12 +17,13 @@ class Client {
     return this.doPost(this.url + "/register_reader", body);
   }
 
-  createPaymentIntent({ amount, currency, description, paymentMethodTypes }) {
+  createPaymentIntent({ amount, currency, description, paymentMethodTypes, email }) {
     const body = {
       amount,
       currency,
       description,
-      payment_method_types: paymentMethodTypes
+      payment_method_types: paymentMethodTypes,
+      email
     };
     return this.doPost(this.url + "/create_payment_intent", body);
   }
@@ -46,7 +46,6 @@ class Client {
     const response = await fetch(this.url + "/list_locations", {
       method: "get",
     });
-
     if (response.ok) {
       return response.json();
     } else {
@@ -63,7 +62,6 @@ class Client {
       },
       body: JSON.stringify(body),
     });
-
     if (response.ok) {
       return response.json();
     } else {
