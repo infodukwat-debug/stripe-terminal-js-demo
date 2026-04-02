@@ -49,7 +49,6 @@ class App extends Component {
       testPaymentMethod: "visa",
       tipAmount: null,
       simulateOnReaderTip: false,
-      // Nouveaux états pour le modèle "paiement à la sortie"
       selectedProduct: null,
       showProductSelection: true,
       sessionStartTime: null,
@@ -181,7 +180,6 @@ class App extends Component {
     console.log("Reader Display Updated!");
   };
 
-  // Démarrer la session (choix du produit)
   startSession = (product) => {
     const startTime = Date.now();
     this.setState({
@@ -195,7 +193,6 @@ class App extends Component {
     this.timerInterval = setInterval(() => this.forceUpdate(), 1000);
   };
 
-  // Terminer la session : calculer le total, créer le PaymentIntent et encaisser
   endSession = async () => {
     if (this.state.paymentInProgress) return;
     if (!this.state.sessionStartTime || !this.state.selectedProduct) {
@@ -214,26 +211,26 @@ class App extends Component {
     const initialAmount = this.state.chargeAmount;
     const totalAmount = initialAmount + extraAmount;
 
+    // Construction de la description avec le supplément
+    let extraText = extraMinutes > 0 ? ` + ${extraMinutes} min supp` : '';
+    const description = `Qnook - ${this.state.selectedProduct.name}${extraText}`;
+
     console.log("--- endSession ---");
     console.log("temps écoulé (min) :", elapsedMinutes);
     console.log("temps choisi (min) :", chosenMinutes);
     console.log("minutes supp. :", extraMinutes);
-    console.log("montant initial (centimes) :", initialAmount);
-    console.log("montant supplément (centimes) :", extraAmount);
     console.log("montant total (centimes) :", totalAmount);
+    console.log("description :", description);
 
     try {
-      // 1. Créer un PaymentIntent avec le montant total (capture automatique)
       const createIntentResponse = await this.client.createPaymentIntent({
         amount: totalAmount,
         currency: this.state.currency,
-        let extraText = extraMinutes > 0 ? ` + ${extraMinutes} min supp` : '';
-description: `Qnook - ${this.state.selectedProduct.name}${extraText}`,
+        description: description,
         paymentMethodTypes: ["card_present"]
       });
       const clientSecret = createIntentResponse.client_secret;
 
-      // 2. Configurer le simulateur (ou lecteur réel)
       const simulatorConfiguration = {
         testPaymentMethod: this.state.testPaymentMethod,
         testCardNumber: this.state.testCardNumber
@@ -241,19 +238,16 @@ description: `Qnook - ${this.state.selectedProduct.name}${extraText}`,
       if (this.state.simulateOnReaderTip) simulatorConfiguration.tipAmount = Number(this.state.tipAmount);
       this.terminal.setSimulatorConfiguration(simulatorConfiguration);
 
-      // 3. Collecter le moyen de paiement
       const collectResult = await this.terminal.collectPaymentMethod(clientSecret);
       if (collectResult.error) {
         throw new Error(`collectPaymentMethod failed: ${collectResult.error.message}`);
       }
 
-      // 4. Traiter le paiement
       const confirmResult = await this.terminal.processPayment(collectResult.paymentIntent);
       if (confirmResult.error) {
         throw new Error(`processPayment failed: ${confirmResult.error.message}`);
       }
 
-      // 5. Succès
       alert(`Paiement réussi !\nTemps réel : ${elapsedMinutes} min\nSupplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\nTotal : ${(totalAmount/100).toFixed(2)} €`);
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.setState({
@@ -271,7 +265,6 @@ description: `Qnook - ${this.state.selectedProduct.name}${extraText}`,
     }
   };
 
-  // Annuler la session
   cancelSession = () => {
     if (this.timerInterval) clearInterval(this.timerInterval);
     this.setState({
@@ -356,7 +349,6 @@ description: `Qnook - ${this.state.selectedProduct.name}${extraText}`,
       paymentInProgress,
     } = this.state;
 
-    // Écran de sélection des produits
     if (showProductSelection && backendURL !== null && reader !== null && !sessionActive) {
       return (
         <div>
@@ -387,7 +379,6 @@ description: `Qnook - ${this.state.selectedProduct.name}${extraText}`,
       );
     }
 
-    // Connexion initiale (backend URL)
     if (backendURL === null && reader === null) {
       return <BackendURLForm onSetBackendURL={this.onSetBackendURL} />;
     } else if (reader === null) {
@@ -403,7 +394,6 @@ description: `Qnook - ${this.state.selectedProduct.name}${extraText}`,
         />
       );
     } else if (sessionActive) {
-      // Session en cours : afficher le timer et les boutons
       const elapsedMs = this.state.sessionStartTime ? Date.now() - this.state.sessionStartTime : 0;
       const elapsedMinutes = Math.floor(elapsedMs / 60000);
       const chosenMinutes = selectedProduct ? parseInt(selectedProduct.name.split(' ')[0]) : 0;
@@ -423,7 +413,6 @@ description: `Qnook - ${this.state.selectedProduct.name}${extraText}`,
         </div>
       );
     } else {
-      // Écran après sélection mais avant démarrage (normalement pas utilisé)
       return (
         <div>
           <p>Prêt à commencer ? Sélectionnez une durée.</p>
