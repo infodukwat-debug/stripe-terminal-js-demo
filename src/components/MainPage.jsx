@@ -45,7 +45,7 @@ class App extends Component {
       refundedAmount: null,
       cancelableRefund: false,
       usingSimulator: false,
-      testCardNumber: "",
+      testCardNumber: "4242424242424242",
       testPaymentMethod: "visa",
       tipAmount: null,
       simulateOnReaderTip: false,
