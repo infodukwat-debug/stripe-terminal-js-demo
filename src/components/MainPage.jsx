@@ -49,13 +49,12 @@ class App extends Component {
       testPaymentMethod: "visa",
       tipAmount: null,
       simulateOnReaderTip: false,
+      // Nouveaux états pour le modèle "paiement à la sortie"
       selectedProduct: null,
       showProductSelection: true,
-      pendingPaymentIntentId: null,
       sessionStartTime: null,
-      waitingForExit: false,
+      sessionActive: false,
       paymentInProgress: false,
-      capturingInProgress: false,
     };
     this.timerInterval = null;
   }
@@ -157,7 +156,7 @@ class App extends Component {
 
   disconnectReader = async () => {
     await this.terminal.disconnectReader();
-    this.setState({ reader: null, waitingForExit: false, pendingPaymentIntentId: null, sessionStartTime: null });
+    this.setState({ reader: null, sessionActive: false, sessionStartTime: null });
     if (this.timerInterval) clearInterval(this.timerInterval);
   };
 
@@ -182,91 +181,29 @@ class App extends Component {
     console.log("Reader Display Updated!");
   };
 
-  collectCardPayment = async () => {
-    if (this.state.paymentInProgress) return;
-    this.setState({ paymentInProgress: true });
-
-    try {
-      let paymentMethodTypes = ["card_present"];
-      if (this.state.currency === "cad") paymentMethodTypes.push("interac_present");
-      const createIntentResponse = await this.client.createPaymentIntent({
-        amount: this.state.chargeAmount + this.state.taxAmount,
-        currency: this.state.currency,
-        description: `Qnook - ${this.state.selectedProduct?.name}`,
-        paymentMethodTypes
-      });
-      const clientSecret = createIntentResponse.client_secret;
-
-      const simulatorConfiguration = {
-        testPaymentMethod: this.state.testPaymentMethod,
-        testCardNumber: this.state.testCardNumber
-      };
-      if (this.state.simulateOnReaderTip) simulatorConfiguration.tipAmount = Number(this.state.tipAmount);
-      this.terminal.setSimulatorConfiguration(simulatorConfiguration);
-
-      this.setState({ cancelablePayment: true });
-      const collectResult = await this.terminal.collectPaymentMethod(clientSecret);
-      if (collectResult.error) {
-        console.log("Collect payment method failed:", collectResult.error.message);
-        this.setState({ cancelablePayment: false, paymentInProgress: false });
-        return;
-      }
-
-      const confirmResult = await this.terminal.processPayment(collectResult.paymentIntent);
-      this.setState({ cancelablePayment: false });
-      if (confirmResult.error) {
-        alert(`Confirm failed: ${confirmResult.error.message}`);
-        this.setState({ paymentInProgress: false });
-        return;
-      }
-
-      if (confirmResult.paymentIntent) {
-        this.pendingPaymentIntentId = confirmResult.paymentIntent.id;
-        const startTime = Date.now();
-        this.setState({
-          sessionStartTime: startTime,
-          waitingForExit: true,
-          showProductSelection: false,
-          paymentInProgress: false,
-        });
-        if (this.timerInterval) clearInterval(this.timerInterval);
-        this.timerInterval = setInterval(() => this.forceUpdate(), 1000);
-        console.log("Préautorisation réussie, session commencée à", new Date(startTime).toLocaleTimeString());
-      }
-    } catch (err) {
-      console.error("Erreur dans collectCardPayment:", err);
-      this.setState({ paymentInProgress: false });
-    }
+  // Démarrer la session (choix du produit)
+  startSession = (product) => {
+    const startTime = Date.now();
+    this.setState({
+      selectedProduct: product,
+      chargeAmount: product.price,
+      sessionStartTime: startTime,
+      sessionActive: true,
+      showProductSelection: false,
+    });
+    if (this.timerInterval) clearInterval(this.timerInterval);
+    this.timerInterval = setInterval(() => this.forceUpdate(), 1000);
   };
 
-  cancelPendingPayment = async () => {
-    await this.terminal.cancelCollectPaymentMethod();
-    this.setState({ cancelablePayment: false });
-  };
-
-  saveCardForFutureUse = async () => {
-    const readResult = await this.terminal.readReusableCard();
-    if (readResult.error) {
-      alert(`readReusableCard failed: ${readResult.error.message}`);
-    } else {
-      try {
-        let customer = await this.client.savePaymentMethodToCustomer({
-          paymentMethodId: readResult.payment_method.id
-        });
-        console.log("Payment method saved to customer!", customer);
-        return customer;
-      } catch (e) {}
-    }
-  };
-
+  // Terminer la session : calculer le total, créer le PaymentIntent et encaisser
   endSession = async () => {
-    if (this.state.capturingInProgress) return;
-    if (!this.pendingPaymentIntentId || !this.state.sessionStartTime) {
+    if (this.state.paymentInProgress) return;
+    if (!this.state.sessionStartTime || !this.state.selectedProduct) {
       alert("Aucune session en cours");
       return;
     }
 
-    this.setState({ capturingInProgress: true });
+    this.setState({ paymentInProgress: true });
 
     const elapsedMs = Date.now() - this.state.sessionStartTime;
     const elapsedMinutes = Math.floor(elapsedMs / 60000);
@@ -286,66 +223,63 @@ class App extends Component {
     console.log("montant total (centimes) :", totalAmount);
 
     try {
-      if (extraAmount > 0) {
-        console.log("Appel update_payment_intent_amount...");
-        const updateResponse = await fetch(`${this.state.backendURL}/update_payment_intent_amount`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            payment_intent_id: this.pendingPaymentIntentId,
-            new_amount: totalAmount
-          })
-        });
-        const updateResult = await updateResponse.json();
-        console.log("Réponse update :", updateResult);
-        if (!updateResponse.ok) {
-          throw new Error(updateResult.error || 'Erreur lors de la mise à jour du montant');
-        }
-      } else {
-        console.log("Pas de supplément, mise à jour du montant sautée");
+      // 1. Créer un PaymentIntent avec le montant total (capture automatique)
+      const createIntentResponse = await this.client.createPaymentIntent({
+        amount: totalAmount,
+        currency: this.state.currency,
+        description: `Qnook - ${this.state.selectedProduct.name}`,
+        paymentMethodTypes: ["card_present"]
+      });
+      const clientSecret = createIntentResponse.client_secret;
+
+      // 2. Configurer le simulateur (ou lecteur réel)
+      const simulatorConfiguration = {
+        testPaymentMethod: this.state.testPaymentMethod,
+        testCardNumber: this.state.testCardNumber
+      };
+      if (this.state.simulateOnReaderTip) simulatorConfiguration.tipAmount = Number(this.state.tipAmount);
+      this.terminal.setSimulatorConfiguration(simulatorConfiguration);
+
+      // 3. Collecter le moyen de paiement
+      const collectResult = await this.terminal.collectPaymentMethod(clientSecret);
+      if (collectResult.error) {
+        throw new Error(`collectPaymentMethod failed: ${collectResult.error.message}`);
       }
 
-      console.log("Appel capture_payment_intent...");
-      const captureResponse = await fetch(`${this.state.backendURL}/capture_payment_intent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payment_intent_id: this.pendingPaymentIntentId })
-      });
-      const captureResult = await captureResponse.json();
-      console.log("Réponse capture :", captureResult);
-      if (captureResponse.ok) {
-        alert(`Session terminée. Temps réel : ${elapsedMinutes} min. Supplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €). Total facturé : ${(totalAmount/100).toFixed(2)} €.`);
-        if (this.timerInterval) clearInterval(this.timerInterval);
-        this.setState({
-          waitingForExit: false,
-          pendingPaymentIntentId: null,
-          sessionStartTime: null,
-          showProductSelection: true,
-          selectedProduct: null,
-          chargeAmount: 100,
-          capturingInProgress: false
-        });
-      } else {
-        alert(`Erreur lors de la capture : ${captureResult.error || "inconnue"}`);
-        this.setState({ capturingInProgress: false });
+      // 4. Traiter le paiement
+      const confirmResult = await this.terminal.processPayment(collectResult.paymentIntent);
+      if (confirmResult.error) {
+        throw new Error(`processPayment failed: ${confirmResult.error.message}`);
       }
+
+      // 5. Succès
+      alert(`Paiement réussi !\nTemps réel : ${elapsedMinutes} min\nSupplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\nTotal : ${(totalAmount/100).toFixed(2)} €`);
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.setState({
+        sessionActive: false,
+        sessionStartTime: null,
+        showProductSelection: true,
+        selectedProduct: null,
+        chargeAmount: 100,
+        paymentInProgress: false,
+      });
     } catch (err) {
       console.error("Erreur endSession:", err);
       alert(`Erreur : ${err.message}`);
-      this.setState({ capturingInProgress: false });
+      this.setState({ paymentInProgress: false });
     }
   };
 
-  cancelSession = async () => {
+  // Annuler la session
+  cancelSession = () => {
     if (this.timerInterval) clearInterval(this.timerInterval);
     this.setState({
-      waitingForExit: false,
-      pendingPaymentIntentId: null,
+      sessionActive: false,
       sessionStartTime: null,
       showProductSelection: true,
       selectedProduct: null,
       chargeAmount: 100,
-      capturingInProgress: false
+      paymentInProgress: false,
     });
   };
 
@@ -394,16 +328,6 @@ class App extends Component {
     this.setState({ backendURL: url });
   };
 
-  selectProduct = (product) => {
-    this.setState({
-      selectedProduct: product,
-      chargeAmount: product.price,
-      taxAmount: 0,
-      showProductSelection: false,
-      itemDescription: product.name,
-    });
-  };
-
   updateChargeAmount = amount => {
     this.setState({ chargeAmount: parseInt(amount, 10) });
   };
@@ -427,10 +351,12 @@ class App extends Component {
       usingSimulator,
       showProductSelection,
       selectedProduct,
-      waitingForExit,
+      sessionActive,
+      paymentInProgress,
     } = this.state;
 
-    if (showProductSelection && backendURL !== null && reader !== null && !waitingForExit) {
+    // Écran de sélection des produits
+    if (showProductSelection && backendURL !== null && reader !== null && !sessionActive) {
       return (
         <div>
           <h2 style={{ textAlign: 'center' }}>Choisissez votre durée</h2>
@@ -438,7 +364,7 @@ class App extends Component {
             {products.map(product => (
               <button
                 key={product.id}
-                onClick={() => this.selectProduct(product)}
+                onClick={() => this.startSession(product)}
                 style={{
                   width: '150px',
                   padding: '20px',
@@ -460,6 +386,7 @@ class App extends Component {
       );
     }
 
+    // Connexion initiale (backend URL)
     if (backendURL === null && reader === null) {
       return <BackendURLForm onSetBackendURL={this.onSetBackendURL} />;
     } else if (reader === null) {
@@ -474,7 +401,8 @@ class App extends Component {
           listLocations={this.client.listLocations}
         />
       );
-    } else if (waitingForExit) {
+    } else if (sessionActive) {
+      // Session en cours : afficher le timer et les boutons
       const elapsedMs = this.state.sessionStartTime ? Date.now() - this.state.sessionStartTime : 0;
       const elapsedMinutes = Math.floor(elapsedMs / 60000);
       const chosenMinutes = selectedProduct ? parseInt(selectedProduct.name.split(' ')[0]) : 0;
@@ -485,8 +413,8 @@ class App extends Component {
           <p>Produit : {selectedProduct?.name} ({(selectedProduct?.price/100).toFixed(2)} €)</p>
           <p>Temps écoulé : {elapsedMinutes} min</p>
           {extraMinutes > 0 && <p>Minutes supplémentaires : {extraMinutes} min ({(extraMinutes * EXTRA_MINUTE_PRICE/100).toFixed(2)} €)</p>}
-          <button onClick={this.endSession} disabled={this.state.capturingInProgress} style={{ margin: '10px', padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-            Terminer et payer
+          <button onClick={this.endSession} disabled={paymentInProgress} style={{ margin: '10px', padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+            {paymentInProgress ? "Paiement en cours..." : "Terminer et payer"}
           </button>
           <button onClick={this.cancelSession} style={{ margin: '10px', padding: '10px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
             Annuler
@@ -494,55 +422,11 @@ class App extends Component {
         </div>
       );
     } else {
+      // Écran après sélection mais avant démarrage (normalement pas utilisé)
       return (
-        <>
-          <div style={{ marginBottom: '20px', textAlign: 'center' }}>
-            {selectedProduct && (
-              <div style={{ background: '#e3f2fd', padding: '10px', borderRadius: '8px' }}>
-                <strong>Produit sélectionné :</strong> {selectedProduct.name} - {(selectedProduct.price / 100).toFixed(2)} €
-                <button 
-                  onClick={() => this.setState({ showProductSelection: true, selectedProduct: null })}
-                  style={{ marginLeft: '15px', padding: '5px 10px', cursor: 'pointer' }}
-                >
-                  Changer
-                </button>
-              </div>
-            )}
-          </div>
-          <CommonWorkflows
-            workFlowDisabled={this.isWorkflowDisabled()}
-            onClickCollectCardPayments={() => this.runWorkflow("collectPayment", this.collectCardPayment)}
-            onClickSaveCardForFutureUse={() => {}}
-            onClickCancelPayment={this.cancelPendingPayment}
-            onChangeTestPaymentMethod={this.onChangeTestPaymentMethod}
-            onChangeTestCardNumber={this.onChangeTestCardNumber}
-            onChangeTipAmount={this.onChangeTipAmount}
-            onChangeSimulateOnReaderTip={this.onChangeSimulateOnReaderTip}
-            cancelablePayment={cancelablePayment}
-            usingSimulator={usingSimulator}
-          />
-          <RefundForm
-            onClickProcessRefund={() => this.runWorkflow("collectRefund", this.collectRefundPaymentMethod)}
-            chargeID={this.state.refundedChargeID}
-            onChangeChargeID={id => this.updateRefundChargeID(id)}
-            refundAmount={this.state.refundedAmount}
-            onChangeRefundAmount={amt => this.updateRefundAmount(amt)}
-            cancelableRefund={this.state.cancelableRefund}
-            onClickCancelRefund={() => this.runWorkflow("cancelRefund", this.cancelPendingRefund)}
-          />
-          <CartForm
-            workFlowDisabled={this.isWorkflowDisabled()}
-            onClickUpdateLineItems={() => this.runWorkflow("updateLineItems", this.updateLineItems)}
-            itemDescription={this.state.itemDescription}
-            chargeAmount={this.state.chargeAmount}
-            taxAmount={this.state.taxAmount}
-            currency={this.state.currency}
-            onChangeCurrency={currency => this.updateCurrency(currency)}
-            onChangeChargeAmount={amount => this.updateChargeAmount(amount)}
-            onChangeTaxAmount={amount => this.updateTaxAmount(amount)}
-            onChangeItemDescription={description => this.updateItemDescription(description)}
-          />
-        </>
+        <div>
+          <p>Prêt à commencer ? Sélectionnez une durée.</p>
+        </div>
       );
     }
   }
