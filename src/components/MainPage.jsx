@@ -227,7 +227,8 @@ class App extends Component {
       const createIntentResponse = await this.client.createPaymentIntent({
         amount: totalAmount,
         currency: this.state.currency,
-        description: `Qnook - ${this.state.selectedProduct.name}`,
+        let extraText = extraMinutes > 0 ? ` + ${extraMinutes} min supp` : '';
+description: `Qnook - ${this.state.selectedProduct.name}${extraText}`,
         paymentMethodTypes: ["card_present"]
       });
       const clientSecret = createIntentResponse.client_secret;
