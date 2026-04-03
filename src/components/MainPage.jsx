@@ -494,14 +494,16 @@ class App extends Component {
       );
     } else if (sessionActive) {
       const elapsedMs = this.state.sessionStartTime ? Date.now() - this.state.sessionStartTime : 0;
-      const elapsedMinutes = Math.floor(elapsedMs / 60000);
+      const totalSeconds = Math.floor(elapsedMs / 1000);
+      const elapsedMinutes = Math.floor(totalSeconds / 60);
+      const elapsedSeconds = totalSeconds % 60;
       const chosenMinutes = selectedProduct ? parseInt(selectedProduct.name.split(' ')[0]) : 0;
       const extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
       return (
         <div style={{ textAlign: 'center' }}>
           <h2>Session en cours</h2>
           <p>Produit : {selectedProduct?.name} ({this.renderPrice(selectedProduct)})</p>
-          <p>Temps écoulé : {elapsedMinutes} min</p>
+          <p>Temps écoulé : {elapsedMinutes} min {elapsedSeconds.toString().padStart(2, '0')} s</p>
           {extraMinutes > 0 && <p>Minutes supplémentaires : {extraMinutes} min ({(extraMinutes * EXTRA_MINUTE_PRICE/100).toFixed(2)} €)</p>}
           <button onClick={this.endSession} disabled={paymentInProgress} style={{ margin: '10px', padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
             {paymentInProgress ? "Paiement en cours..." : "Terminer et payer"}
