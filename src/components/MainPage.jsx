@@ -1,67 +1,105 @@
-// ... (même code jusqu'à endSession)
+const express = require('express');
+const cors = require('cors');
+const Stripe = require('stripe');
+const fs = require('fs');
+const path = require('path');
 
-endSession = async () => {
-  if (this.state.paymentInProgress) return;
-  if (!this.state.sessionStartTime || !this.state.selectedProduct) {
-    alert("Aucune session en cours");
-    return;
-  }
+const app = express();
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
+app.use(express.json());
 
-  this.setState({ paymentInProgress: true });
+const stripe = Stripe(process.env.STRIPE_TEST_SECRET_KEY);
+const productsFile = path.join(__dirname, 'products.json');
 
-  const elapsedMs = Date.now() - this.state.sessionStartTime;
-  const elapsedMinutes = Math.floor(elapsedMs / 60000);
-  const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
-  let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
-  const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
-  const totalAmount = this.state.chargeAmount + extraAmount;
-
-  const description = `Qnook - ${this.state.selectedProduct.name}${extraMinutes > 0 ? ` + ${extraMinutes} min supp` : ''}`;
-
+// ========== Routes Stripe Terminal ==========
+app.post('/connection_token', async (req, res) => {
   try {
-    // Créer le PaymentIntent avec le montant total
-    const createIntentResponse = await this.client.createPaymentIntent({
-      amount: totalAmount,
-      currency: this.state.currency,
-      description: description,
-      paymentMethodTypes: ["card_present"],
-      email: this.state.wantReceipt ? this.state.customerEmail : undefined
-    });
-    const clientSecret = createIntentResponse.client_secret;
-
-    // Configurer le simulateur
-    const simulatorConfiguration = {
-      testPaymentMethod: this.state.testPaymentMethod,
-      testCardNumber: this.state.testCardNumber
-    };
-    if (this.state.simulateOnReaderTip) simulatorConfiguration.tipAmount = Number(this.state.tipAmount);
-    this.terminal.setSimulatorConfiguration(simulatorConfiguration);
-
-    // Collecter le paiement
-    const collectResult = await this.terminal.collectPaymentMethod(clientSecret);
-    if (collectResult.error) throw new Error(collectResult.error.message);
-
-    // Traiter le paiement
-    const confirmResult = await this.terminal.processPayment(collectResult.paymentIntent);
-    if (confirmResult.error) throw new Error(confirmResult.error.message);
-
-    alert(`Paiement réussi !\nTemps réel : ${elapsedMinutes} min\nSupplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\nTotal : ${(totalAmount/100).toFixed(2)} €`);
-    if (this.timerInterval) clearInterval(this.timerInterval);
-    this.setState({
-      sessionActive: false,
-      sessionStartTime: null,
-      showProductSelection: true,
-      selectedProduct: null,
-      chargeAmount: 100,
-      paymentInProgress: false,
-      showEmailForm: false,
-      emailSubmitted: false,
-    });
+    const token = await stripe.terminal.connectionTokens.create();
+    res.json({ secret: token.secret });
   } catch (err) {
-    console.error(err);
-    alert(`Erreur : ${err.message}`);
-    this.setState({ paymentInProgress: false });
+    res.status(500).json({ error: err.message });
   }
-};
+});
 
-// ... (le reste du fichier inchangé)
+// Création d'un PaymentIntent avec capture automatique (paiement immédiat)
+app.post('/create_payment_intent', async (req, res) => {
+  const { amount, currency, description, payment_method_types, email } = req.body;
+  if (!amount || !currency) return res.status(400).json({ error: 'Missing amount or currency' });
+  try {
+    const intentParams = {
+      amount: parseInt(amount),
+      currency,
+      payment_method_types: payment_method_types || ['card_present'],
+      capture_method: 'automatic',
+      description: description || 'Paiement Qnook',
+    };
+    if (email) intentParams.receipt_email = email;
+    const intent = await stripe.paymentIntents.create(intentParams);
+    res.json({ client_secret: intent.client_secret });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== Routes Produits (CRUD) ==========
+if (!fs.existsSync(productsFile)) fs.writeFileSync(productsFile, JSON.stringify([], null, 2));
+
+app.get('/api/products', (req, res) => {
+  try {
+    const data = fs.readFileSync(productsFile, 'utf8');
+    res.json(JSON.parse(data));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/products', (req, res) => {
+  try {
+    const { name, price, image, promo } = req.body;
+    if (!name || price === undefined) return res.status(400).json({ error: 'Missing name or price' });
+    const products = JSON.parse(fs.readFileSync(productsFile, 'utf8'));
+    const newId = products.length ? Math.max(...products.map(p => p.id)) + 1 : 1;
+    const newProduct = { id: newId, name, price, image: image || '🕐', promo: promo || null };
+    products.push(newProduct);
+    fs.writeFileSync(productsFile, JSON.stringify(products, null, 2));
+    res.json(newProduct);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/products/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { name, price, image, promo } = req.body;
+    const products = JSON.parse(fs.readFileSync(productsFile, 'utf8'));
+    const index = products.findIndex(p => p.id === id);
+    if (index === -1) return res.status(404).json({ error: 'Product not found' });
+    if (name !== undefined) products[index].name = name;
+    if (price !== undefined) products[index].price = price;
+    if (image !== undefined) products[index].image = image;
+    if (promo !== undefined) products[index].promo = promo;
+    fs.writeFileSync(productsFile, JSON.stringify(products, null, 2));
+    res.json(products[index]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/products/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const products = JSON.parse(fs.readFileSync(productsFile, 'utf8'));
+    const newProducts = products.filter(p => p.id !== id);
+    if (newProducts.length === products.length) return res.status(404).json({ error: 'Product not found' });
+    fs.writeFileSync(productsFile, JSON.stringify(newProducts, null, 2));
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/ping', (req, res) => res.json({ status: 'ok' }));
+
+const port = process.env.PORT || 10000;
+app.listen(port, '0.0.0.0', () => console.log(`Backend unifié démarré sur le port ${port}`));
