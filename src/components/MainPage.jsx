@@ -572,7 +572,7 @@ class App extends Component {
               <input type="email" value={customerEmail} onChange={this.handleEmailChange} style={{ width: '100%', padding: '8px', marginTop: '5px' }} />
             </div>
           )}
-          {/* Sélecteur de carte de test */}
+          {/* Sélecteur de carte de test avec affichage du numéro */}
           <div style={{ marginBottom: '10px' }}>
             <label>Carte de test :</label>
             <select value={selectedTestCard.number} onChange={this.handleTestCardChange} style={{ width: '100%', padding: '8px', marginTop: '5px' }}>
@@ -580,6 +580,9 @@ class App extends Component {
                 <option key={card.number} value={card.number}>{card.name}</option>
               ))}
             </select>
+            <div style={{ marginTop: '5px', fontSize: '0.9rem', color: '#555' }}>
+              Numéro: <strong>{selectedTestCard.number}</strong>
+            </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
             <button onClick={this.submitEmailForm} style={{ padding: '10px 20px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
