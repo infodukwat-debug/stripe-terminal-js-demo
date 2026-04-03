@@ -49,8 +49,10 @@ class App extends Component {
       paymentInProgress: false,
       showEmailForm: false,
       wantReceipt: false,
+      wantReminder: false,
       customerEmail: "",
       emailSubmitted: false,
+      reminderSent: false,
       products: [],
     };
     this.timerInterval = null;
@@ -202,8 +204,10 @@ class App extends Component {
       showProductSelection: false,
       showEmailForm: true,
       wantReceipt: false,
+      wantReminder: false,
       customerEmail: "",
       emailSubmitted: false,
+      reminderSent: false,
     });
   };
 
@@ -211,17 +215,21 @@ class App extends Component {
     this.setState({ wantReceipt: e.target.checked });
   };
 
+  handleWantReminderChange = (e) => {
+    this.setState({ wantReminder: e.target.checked });
+  };
+
   handleEmailChange = (e) => {
     this.setState({ customerEmail: e.target.value });
   };
 
   submitEmailForm = () => {
-    const { wantReceipt, customerEmail } = this.state;
-    if (wantReceipt && !customerEmail) {
-      alert("Veuillez saisir une adresse email pour recevoir le reçu.");
+    const { wantReceipt, wantReminder, customerEmail } = this.state;
+    if ((wantReceipt || wantReminder) && !customerEmail) {
+      alert("Veuillez saisir une adresse email.");
       return;
     }
-    this.setState({ emailSubmitted: true });
+    this.setState({ emailSubmitted: true, reminderSent: false });
     const startTime = Date.now();
     this.setState({
       sessionStartTime: startTime,
@@ -229,7 +237,7 @@ class App extends Component {
       showEmailForm: false,
     });
     if (this.timerInterval) clearInterval(this.timerInterval);
-    this.timerInterval = setInterval(() => this.forceUpdate(), 1000);
+    this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
   };
 
   cancelEmailForm = () => {
@@ -238,6 +246,42 @@ class App extends Component {
       selectedProduct: null,
       showEmailForm: false,
     });
+  };
+
+  checkReminderAndUpdate = () => {
+    const { sessionStartTime, selectedProduct, wantReminder, reminderSent, customerEmail, backendURL } = this.state;
+    if (!sessionStartTime || !selectedProduct) return;
+
+    const elapsedMs = Date.now() - sessionStartTime;
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
+    const chosenMinutes = parseInt(selectedProduct.name.split(' ')[0]);
+
+    if (wantReminder && !reminderSent && chosenMinutes > 5 && elapsedMinutes >= chosenMinutes - 5) {
+      this.sendReminder();
+      this.setState({ reminderSent: true });
+    }
+
+    this.forceUpdate();
+  };
+
+  sendReminder = async () => {
+    const { customerEmail, selectedProduct, backendURL } = this.state;
+    if (!customerEmail || !selectedProduct) return;
+    const chosenMinutes = parseInt(selectedProduct.name.split(' ')[0]);
+    try {
+      await fetch(`${backendURL}/send-reminder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: customerEmail,
+          productName: selectedProduct.name,
+          durationChosen: chosenMinutes,
+        }),
+      });
+      console.log("Rappel envoyé");
+    } catch (err) {
+      console.error("Erreur envoi rappel:", err);
+    }
   };
 
   endSession = async () => {
@@ -293,6 +337,7 @@ class App extends Component {
         paymentInProgress: false,
         showEmailForm: false,
         emailSubmitted: false,
+        reminderSent: false,
       });
     } catch (err) {
       console.error("Erreur endSession:", err);
@@ -312,6 +357,7 @@ class App extends Component {
       paymentInProgress: false,
       showEmailForm: false,
       emailSubmitted: false,
+      reminderSent: false,
     });
   };
 
@@ -412,6 +458,7 @@ class App extends Component {
       paymentInProgress,
       showEmailForm,
       wantReceipt,
+      wantReminder,
       customerEmail,
       emailSubmitted,
       products,
@@ -460,7 +507,15 @@ class App extends Component {
               Recevoir le reçu final par email
             </label>
           </div>
-          {wantReceipt && (
+          {selectedProduct && parseInt(selectedProduct.name.split(' ')[0]) > 5 && (
+            <div style={{ marginBottom: '10px' }}>
+              <label>
+                <input type="checkbox" checked={wantReminder} onChange={this.handleWantReminderChange} />
+                Recevoir un rappel par email 5 minutes avant la fin de la session
+              </label>
+            </div>
+          )}
+          {(wantReceipt || wantReminder) && (
             <div style={{ marginBottom: '10px' }}>
               <label>Adresse email :</label>
               <input type="email" value={customerEmail} onChange={this.handleEmailChange} style={{ width: '100%', padding: '8px', marginTop: '5px' }} />
