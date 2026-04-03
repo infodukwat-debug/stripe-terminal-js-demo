@@ -262,6 +262,7 @@ class App extends Component {
     const description = `Qnook - ${this.state.selectedProduct.name}${extraText}`;
 
     try {
+      // 1. Créer un PaymentIntent en capture manuelle (préautorisation)
       const createIntentResponse = await this.client.createPaymentIntent({
         amount: totalAmount,
         currency: this.state.currency,
@@ -271,6 +272,7 @@ class App extends Component {
       });
       const clientSecret = createIntentResponse.client_secret;
 
+      // 2. Configurer le simulateur et collecter le paiement
       const simulatorConfiguration = {
         testPaymentMethod: this.state.testPaymentMethod,
         testCardNumber: this.state.testCardNumber
@@ -283,9 +285,28 @@ class App extends Component {
         throw new Error(`collectPaymentMethod failed: ${collectResult.error.message}`);
       }
 
+      // 3. Process payment (autorisation)
       const confirmResult = await this.terminal.processPayment(collectResult.paymentIntent);
       if (confirmResult.error) {
         throw new Error(`processPayment failed: ${confirmResult.error.message}`);
+      }
+
+      const paymentIntentId = confirmResult.paymentIntent.id;
+
+      // 4. Appeler le backend pour terminer la session et facturer le supplément
+      const endSessionResponse = await fetch(`${this.state.backendURL}/end-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentIntentId: paymentIntentId,
+          baseAmount: initialAmount,
+          extraMinutes: extraMinutes,
+          pricePerMinute: EXTRA_MINUTE_PRICE
+        })
+      });
+      const endSessionResult = await endSessionResponse.json();
+      if (!endSessionResponse.ok) {
+        throw new Error(endSessionResult.error || 'Erreur lors de la fin de session');
       }
 
       alert(`Paiement réussi !\nTemps réel : ${elapsedMinutes} min\nSupplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\nTotal : ${(totalAmount/100).toFixed(2)} €`);
