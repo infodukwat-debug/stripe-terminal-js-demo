@@ -324,7 +324,16 @@ class App extends Component {
       if (collectResult.error) throw new Error(collectResult.error.message);
 
       const confirmResult = await this.terminal.processPayment(collectResult.paymentIntent);
-      if (confirmResult.error) throw new Error(confirmResult.error.message);
+      if (confirmResult.error) {
+        // Gestion spécifique des fonds insuffisants
+        if (confirmResult.error.code === 'insufficient_funds') {
+          alert(`Le paiement de ${(totalAmount/100).toFixed(2)}€ a été refusé : fonds insuffisants sur votre carte. Veuillez choisir une durée plus courte.`);
+          this.cancelSession(); // Retour à l'écran de sélection
+        } else {
+          alert(`Le paiement a échoué : ${confirmResult.error.message}`);
+        }
+        return;
+      }
 
       alert(`Paiement réussi !\nTemps réel : ${elapsedMinutes} min\nSupplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\nTotal : ${(totalAmount/100).toFixed(2)} €`);
       if (this.timerInterval) clearInterval(this.timerInterval);
@@ -341,7 +350,14 @@ class App extends Component {
       });
     } catch (err) {
       console.error("Erreur endSession:", err);
-      alert(`Erreur : ${err.message}`);
+      // Vérification supplémentaire si l'erreur contient 'insufficient_funds'
+      if (err.message && err.message.includes('insufficient_funds')) {
+        alert(`Le paiement a été refusé : fonds insuffisants. Veuillez choisir une durée plus courte.`);
+        this.cancelSession();
+      } else {
+        alert(`Erreur : ${err.message}`);
+      }
+    } finally {
       this.setState({ paymentInProgress: false });
     }
   };
