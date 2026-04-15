@@ -1,7 +1,7 @@
 import React, { Component } from "react";
 
 import Client from "../client";
-import Logger from "../logger"; // Attention : vérifiez le chemin réel (logger.js)
+import Logger from "../logger";
 
 import BackendURLForm from "../Forms/BackendURLForm.jsx";
 import CommonWorkflows from "../Forms/CommonWorkflows.jsx";
@@ -15,8 +15,9 @@ import Logs from "../Logs/Logs.jsx";
 import { css } from "emotion";
 
 const EXTRA_MINUTE_PRICE = 100; // 1,00 € par minute supplémentaire
+const INCREMENT_MARGIN_MINUTES = 5; // Marge de 5 minutes avant d'incrémenter
 
-// Liste des cartes de test Stripe (pour le simulateur)
+// Liste des cartes de test Stripe
 const testCards = [
   { name: "Visa (succès)", number: "4242424242424242", type: "visa" },
   { name: "Visa Débit (succès)", number: "4000056655665556", type: "visa_debit" },
@@ -81,9 +82,12 @@ class App extends Component {
       reminderSent: false,
       products: [],
       selectedTestCard: testCards[0],
-      // Nouveaux champs pour la pré-autorisation
       pendingPaymentIntentId: null,
       currentAuthorizedAmount: 0,
+      currentAuthorizedMinutes: 0,
+      pricePerMinute: 0,
+      insufficientFundsWarning: false, // Nouveau : afficher un message d'avertissement
+      incrementsDisabled: false, // Pour arrêter les incrémentations après un refus
     };
     this.timerInterval = null;
   }
@@ -227,7 +231,6 @@ class App extends Component {
     console.log("Reader Display Updated!");
   };
 
-  // Calcul du montant de pré-autorisation
   computeAuthorizationAmount(priceInCents, durationMinutes) {
     if (durationMinutes < 30) {
       return priceInCents * 2;
@@ -236,7 +239,6 @@ class App extends Component {
     }
   }
 
-  // Proposition d'une durée plus courte (moitié) après refus
   handleInsufficientFunds = (currentDuration, originalProduct) => {
     const newDuration = Math.floor(currentDuration / 2);
     if (newDuration < 1) {
@@ -244,21 +246,17 @@ class App extends Component {
       this.cancelEmailForm();
       return;
     }
-    // Calcul du prix proportionnel
     const originalMinutes = parseInt(originalProduct.name.split(' ')[0]);
     const newPrice = (newDuration / originalMinutes) * originalProduct.price;
-    // Créer un produit temporaire
     const tempProduct = {
       ...originalProduct,
       name: `${newDuration} min`,
-      price: Math.ceil(newPrice) // arrondir au centime supérieur
+      price: Math.ceil(newPrice)
     };
     this.setState({ selectedProduct: tempProduct });
-    // Relancer la pré-autorisation
     this.startPaymentAuthorization();
   };
 
-  // Lance la pré-autorisation (après validation des options email)
   startPaymentAuthorization = async () => {
     const { selectedProduct, wantReceipt, customerEmail, currency, selectedTestCard } = this.state;
     if (!selectedProduct) return;
@@ -266,6 +264,7 @@ class App extends Component {
     const chosenMinutes = parseInt(selectedProduct.name.split(' ')[0]);
     const basePrice = selectedProduct.price;
     const authAmount = this.computeAuthorizationAmount(basePrice, chosenMinutes);
+    const pricePerMinute = basePrice / chosenMinutes;
 
     this.setState({ paymentInProgress: true });
 
@@ -299,19 +298,25 @@ class App extends Component {
         return;
       }
 
-      // Succès de la pré-autorisation
+      // Succès
       this.pendingPaymentIntentId = confirmResult.paymentIntent.id;
       this.currentAuthorizedAmount = authAmount;
+      const authorizedMinutes = Math.floor(authAmount / pricePerMinute);
+      this.currentAuthorizedMinutes = authorizedMinutes;
+      this.pricePerMinute = pricePerMinute;
+
       const startTime = Date.now();
       this.setState({
         sessionStartTime: startTime,
         sessionActive: true,
         showEmailForm: false,
         paymentInProgress: false,
+        insufficientFundsWarning: false,
+        incrementsDisabled: false,
       });
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
-      console.log("Pré-autorisation réussie, session démarrée");
+      console.log(`Pré-autorisation réussie, session démarrée. Autorisé jusqu'à ${authorizedMinutes} min.`);
     } catch (err) {
       console.error("Erreur startPaymentAuthorization:", err);
       alert(`Erreur : ${err.message}`);
@@ -319,7 +324,6 @@ class App extends Component {
     }
   };
 
-  // Sélection d'un produit (étape 1)
   selectProduct = (product) => {
     this.setState({
       selectedProduct: product,
@@ -360,7 +364,6 @@ class App extends Component {
       return;
     }
     this.setState({ emailSubmitted: true, reminderSent: false });
-    // Lancer la pré-autorisation
     this.startPaymentAuthorization();
   };
 
@@ -370,6 +373,60 @@ class App extends Component {
       selectedProduct: null,
       showEmailForm: false,
     });
+  };
+
+  checkAndIncrementAuthorization = async () => {
+    const { sessionStartTime, selectedProduct, currentAuthorizedMinutes, pricePerMinute, pendingPaymentIntentId, backendURL, incrementsDisabled } = this.state;
+    if (!sessionStartTime || !selectedProduct || !pendingPaymentIntentId || incrementsDisabled) return;
+
+    const elapsedMs = Date.now() - sessionStartTime;
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
+    const requiredMinutes = elapsedMinutes + INCREMENT_MARGIN_MINUTES;
+
+    if (requiredMinutes > currentAuthorizedMinutes) {
+      const newAmount = requiredMinutes * pricePerMinute;
+      console.log(`Incrémentation nécessaire : actuellement autorisé ${currentAuthorizedMinutes} min, besoin de ${requiredMinutes} min → nouveau montant ${newAmount} centimes`);
+      try {
+        const response = await fetch(`${backendURL}/increment-authorization`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paymentIntentId: pendingPaymentIntentId,
+            newAmount: Math.ceil(newAmount)
+          })
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          if (errorData.error && (errorData.error.includes('insufficient_funds') || errorData.error.includes('Insufficient funds'))) {
+            // Fonds insuffisants pour incrémenter
+            this.setState({
+              insufficientFundsWarning: true,
+              incrementsDisabled: true
+            });
+            console.warn("Incrémentation refusée : fonds insuffisants.");
+            return;
+          }
+          throw new Error(errorData.error || "Erreur lors de l'incrémentation");
+        }
+        // Succès
+        this.currentAuthorizedAmount = Math.ceil(newAmount);
+        this.currentAuthorizedMinutes = requiredMinutes;
+        console.log(`Autorisation incrémentée avec succès à ${requiredMinutes} minutes (${Math.ceil(newAmount)} centimes)`);
+        // Si un message d'avertissement était affiché, on le cache
+        if (this.state.insufficientFundsWarning) {
+          this.setState({ insufficientFundsWarning: false });
+        }
+      } catch (err) {
+        console.error("Erreur lors de l'incrémentation proactive:", err);
+        // Si l'erreur contient "insufficient_funds", on affiche le message
+        if (err.message && (err.message.includes('insufficient_funds') || err.message.includes('Insufficient funds'))) {
+          this.setState({
+            insufficientFundsWarning: true,
+            incrementsDisabled: true
+          });
+        }
+      }
+    }
   };
 
   checkReminderAndUpdate = () => {
@@ -385,6 +442,7 @@ class App extends Component {
       this.setState({ reminderSent: true });
     }
 
+    this.checkAndIncrementAuthorization();
     this.forceUpdate();
   };
 
@@ -422,30 +480,12 @@ class App extends Component {
     const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
     let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
     const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
-    const totalAmount = this.state.selectedProduct.price + extraAmount;
+    const theoreticalTotal = this.state.selectedProduct.price + extraAmount;
 
-    const extraText = extraMinutes > 0 ? ` + ${extraMinutes} min supp` : '';
-    const description = `Qnook - ${this.state.selectedProduct.name}${extraText}`;
+    // Montant réellement autorisé (le plus haut possible)
+    const capturedAmount = this.state.currentAuthorizedAmount;
 
     try {
-      // Si le montant final dépasse l'autorisation, on incrémente
-      if (totalAmount > this.currentAuthorizedAmount) {
-        const incrementResponse = await fetch(`${this.state.backendURL}/increment-authorization`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            paymentIntentId: this.pendingPaymentIntentId,
-            newAmount: totalAmount
-          })
-        });
-        if (!incrementResponse.ok) {
-          const errorData = await incrementResponse.json();
-          throw new Error(errorData.error || "Erreur lors de l'incrémentation");
-        }
-        console.log("Autorisation incrémentée avec succès");
-      }
-
-      // Capture du paiement
       const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -456,7 +496,7 @@ class App extends Component {
         throw new Error(errorData.error || "Erreur lors de la capture");
       }
 
-      alert(`Paiement réussi !\nTemps réel : ${elapsedMinutes} min\nSupplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\nTotal : ${(totalAmount/100).toFixed(2)} €`);
+      alert(`Paiement réussi !\nTemps réel : ${elapsedMinutes} min\nSupplément théorique : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\nMontant facturé : ${(capturedAmount/100).toFixed(2)} €`);
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.resetSession();
     } catch (err) {
@@ -480,6 +520,10 @@ class App extends Component {
       reminderSent: false,
       pendingPaymentIntentId: null,
       currentAuthorizedAmount: 0,
+      currentAuthorizedMinutes: 0,
+      pricePerMinute: 0,
+      insufficientFundsWarning: false,
+      incrementsDisabled: false,
     });
     if (this.timerInterval) clearInterval(this.timerInterval);
   };
@@ -590,6 +634,7 @@ class App extends Component {
       emailSubmitted,
       products,
       selectedTestCard,
+      insufficientFundsWarning,
     } = this.state;
 
     if (showProductSelection && backendURL !== null && reader !== null && !sessionActive && !showEmailForm) {
@@ -628,7 +673,7 @@ class App extends Component {
         <div style={{ maxWidth: '500px', margin: '0 auto', padding: '20px', border: '1px solid #ccc', borderRadius: '10px' }}>
           <h2>Options de la session</h2>
           <p>Vous avez choisi : <strong>{selectedProduct?.name} ({this.renderPrice(selectedProduct)})</strong></p>
-          <p><strong>Information :</strong> Une pré-autorisation de {selectedProduct && (selectedProduct.price / 100).toFixed(2)}€ sera effectuée (garantie pour le temps supplémentaire). Seul le temps réel sera débité.</p>
+          <p><strong>Information :</strong> Une pré-autorisation majorée sera effectuée. En cas de dépassement, l'autorisation sera augmentée automatiquement jusqu'à la limite de votre carte. Seul le temps réel sera débité.</p>
           <div style={{ marginBottom: '10px' }}>
             <label>
               <input type="checkbox" checked={wantReceipt} onChange={this.handleWantReceiptChange} />
@@ -699,6 +744,11 @@ class App extends Component {
           <p>Produit : {selectedProduct?.name} ({this.renderPrice(selectedProduct)})</p>
           <p>Temps écoulé : {elapsedMinutes} min {elapsedSeconds.toString().padStart(2, '0')} s</p>
           {extraMinutes > 0 && <p>Minutes supplémentaires : {extraMinutes} min ({(extraMinutes * EXTRA_MINUTE_PRICE/100).toFixed(2)} €)</p>}
+          {insufficientFundsWarning && (
+            <div style={{ color: 'red', margin: '10px 0', padding: '10px', background: '#ffeeee', borderRadius: '5px' }}>
+              ⚠️ Solde insuffisant pour continuer la session. Veuillez libérer la cabine.
+            </div>
+          )}
           <button onClick={this.endSession} disabled={paymentInProgress} style={{ margin: '10px', padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
             {paymentInProgress ? "Paiement en cours..." : "Terminer et payer"}
           </button>
