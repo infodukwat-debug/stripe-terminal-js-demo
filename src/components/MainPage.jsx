@@ -1,7 +1,7 @@
 import React, { Component } from "react";
 
 import Client from "../client";
-import Logger from "../ logger"; // Attention : vérifiez le chemin réel (logger.js)
+import Logger from "../logger"; // Attention : vérifiez le chemin réel (logger.js)
 
 import BackendURLForm from "../Forms/BackendURLForm.jsx";
 import CommonWorkflows from "../Forms/CommonWorkflows.jsx";
