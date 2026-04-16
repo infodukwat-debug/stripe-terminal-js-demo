@@ -15,14 +15,13 @@ import Logs from "../Logs/Logs.jsx";
 import { css } from "emotion";
 
 const EXTRA_MINUTE_PRICE = 100; // 1,00 € par minute supplémentaire
-const INCREMENT_MARGIN_MINUTES = 5;   // marge pour déclencher l'incrémentation
-const INCREMENT_STEP_MINUTES = 10;    // incrémentation par paliers de 10 minutes
+const INCREMENT_MARGIN_MINUTES = 1;   // déclenchement rapide
+const INCREMENT_STEP_MINUTES = 5;     // incrémentation par paliers de 5 minutes
 
-// Liste des cartes de test Stripe (pour le simulateur)
+// Liste des cartes de test Stripe
 const testCards = [
   { name: "Visa (succès)", number: "4242424242424242", type: "visa" },
   { name: "Refus - fonds insuffisants", number: "4000000000009995", type: "charge_declined_insufficient_funds" },
-  // Ajoutez d'autres cartes si nécessaire
 ];
 
 class App extends Component {
@@ -211,7 +210,6 @@ class App extends Component {
     console.log("Reader Display Updated!");
   };
 
-  // Calcul du montant de pré-autorisation (2x ou 1.5x)
   computeAuthorizationAmount(priceInCents, durationMinutes) {
     if (durationMinutes < 30) {
       return priceInCents * 2;
@@ -220,7 +218,6 @@ class App extends Component {
     }
   }
 
-  // Gestion des fonds insuffisants à l'entrée (réduction de la durée)
   handleInsufficientFunds = (currentDuration, originalProduct) => {
     const newDuration = Math.floor(currentDuration / 2);
     if (newDuration < 1) {
@@ -239,7 +236,6 @@ class App extends Component {
     this.startPaymentAuthorization();
   };
 
-  // Lance la pré-autorisation (après validation des options email)
   startPaymentAuthorization = async () => {
     const { selectedProduct, wantReceipt, customerEmail, currency, selectedTestCard } = this.state;
     if (!selectedProduct) return;
@@ -304,7 +300,6 @@ class App extends Component {
     }
   };
 
-  // Sélection d'un produit (étape 1)
   selectProduct = (product) => {
     this.setState({
       selectedProduct: product,
@@ -354,17 +349,15 @@ class App extends Component {
     });
   };
 
-  // Incrémentation proactive (appelée périodiquement)
   checkAndIncrementAuthorization = async () => {
-    const { sessionStartTime, currentAuthorizedMinutes, pricePerMinute, pendingPaymentIntentId, backendURL, selectedProduct } = this.state;
+    const { sessionStartTime, currentAuthorizedMinutes, pricePerMinute, pendingPaymentIntentId, backendURL } = this.state;
     if (!sessionStartTime || !pendingPaymentIntentId) return;
 
     const elapsedMs = Date.now() - sessionStartTime;
     const elapsedMinutes = Math.floor(elapsedMs / 60000);
     const requiredMinutes = elapsedMinutes + INCREMENT_MARGIN_MINUTES;
 
-    // Limite optionnelle (2 heures max)
-    const MAX_SESSION_MINUTES = 120;
+    const MAX_SESSION_MINUTES = 120; // 2 heures max
     if (requiredMinutes > MAX_SESSION_MINUTES) {
       alert("Durée maximale de session atteinte (2h). Veuillez libérer la cabine.");
       this.cancelSession();
@@ -372,7 +365,6 @@ class App extends Component {
     }
 
     if (requiredMinutes > currentAuthorizedMinutes) {
-      // Incrémenter par paliers de INCREMENT_STEP_MINUTES
       let newMinutes = currentAuthorizedMinutes + INCREMENT_STEP_MINUTES;
       if (newMinutes > requiredMinutes) newMinutes = requiredMinutes;
       const newAmount = Math.ceil(newMinutes * pricePerMinute);
@@ -396,12 +388,11 @@ class App extends Component {
       } catch (err) {
         console.error("❌ Incrémentation refusée par Stripe :", err);
         alert("Attention : votre carte ne permet pas de couvrir davantage de temps. La session sera interrompue si vous dépassez la durée autorisée.");
-        // On n'incrémente plus, on laisse l'utilisateur finir dans la limite actuelle
+        // On arrête d'incrémenter
       }
     }
   };
 
-  // Fonction appelée chaque seconde (timer + rappel + incrémentation)
   checkReminderAndUpdate = () => {
     const { sessionStartTime, selectedProduct, wantReminder, reminderSent, customerEmail, backendURL } = this.state;
     if (!sessionStartTime || !selectedProduct) return;
@@ -410,16 +401,12 @@ class App extends Component {
     const elapsedMinutes = Math.floor(elapsedMs / 60000);
     const chosenMinutes = parseInt(selectedProduct.name.split(' ')[0]);
 
-    // Rappel email 5 min avant la fin
     if (wantReminder && !reminderSent && chosenMinutes > 5 && elapsedMinutes >= chosenMinutes - 5) {
       this.sendReminder();
       this.setState({ reminderSent: true });
     }
 
-    // Incrémentation proactive
     this.checkAndIncrementAuthorization();
-
-    // Rafraîchir l'affichage
     this.forceUpdate();
   };
 
@@ -443,7 +430,6 @@ class App extends Component {
     }
   };
 
-  // Fin de session : capture du minimum entre dû et autorisation
   endSession = async () => {
     if (this.state.paymentInProgress) return;
     if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
@@ -460,18 +446,16 @@ class App extends Component {
     const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
     const totalDue = this.state.selectedProduct.price + extraAmount;
 
-    // Montant effectivement capturable = min(total dû, autorisation actuelle)
     const captureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
     const capturedMinutes = Math.floor(captureAmount / this.pricePerMinute);
     const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
 
-    // Construction de la description détaillée pour le reçu
     let description = `Qnook - ${chosenMinutes} min`;
     if (capturedExtra > 0) description += ` + ${capturedExtra} min supp`;
     description += ` - ${(captureAmount/100).toFixed(2)}€`;
 
     try {
-      // Mise à jour de la description (non bloquante, mais améliore le reçu)
+      // Mise à jour de la description (non bloquante)
       try {
         await fetch(`${this.state.backendURL}/update-payment-intent`, {
           method: 'POST',
@@ -483,7 +467,6 @@ class App extends Component {
         });
       } catch (descErr) { console.warn(descErr); }
 
-      // Capture du montant effectif
       const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -494,7 +477,6 @@ class App extends Component {
         throw new Error(errorData.error || "Erreur capture");
       }
 
-      // Message utilisateur
       let msg = `✅ Paiement réussi !\n📆 Temps choisi : ${chosenMinutes} min (${(this.state.selectedProduct.price/100).toFixed(2)} €)\n`;
       if (capturedExtra > 0) {
         msg += `➕ Supplément facturé : ${capturedExtra} min (${(capturedExtra * this.pricePerMinute / 100).toFixed(2)} €)\n`;
