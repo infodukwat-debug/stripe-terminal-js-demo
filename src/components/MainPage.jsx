@@ -16,7 +16,7 @@ import { css } from "emotion";
 
 const EXTRA_MINUTE_PRICE = 100; // 1,00 € par minute supplémentaire
 const INCREMENT_STEP_CENTS = 500;   // palier de 5€
-const MAX_INCREMENT_ATTEMPTS = 10;  // maximum 10 tentatives
+const MAX_INCREMENT_ATTEMPTS = 10;
 
 const testCards = [
   { name: "Visa (succès)", number: "4242424242424242", type: "visa" },
@@ -51,7 +51,6 @@ class App extends Component {
       simulateOnReaderTip: false,
       selectedProduct: null,
       showProductSelection: true,
-      sessionStartTime: null,
       sessionActive: false,
       paymentInProgress: false,
       showEmailForm: false,
@@ -67,10 +66,16 @@ class App extends Component {
       pricePerMinute: 0,
     };
     this.timerInterval = null;
+    this.startTime = null; // timestamp de début de session (en ms)
   }
 
-  componentDidMount() { this.loadProducts(); }
-  componentWillUnmount() { if (this.timerInterval) clearInterval(this.timerInterval); }
+  componentDidMount() {
+    this.loadProducts();
+  }
+
+  componentWillUnmount() {
+    if (this.timerInterval) clearInterval(this.timerInterval);
+  }
 
   loadProducts = async () => {
     const { backendURL } = this.state;
@@ -80,13 +85,20 @@ class App extends Component {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       this.setState({ products: data });
-    } catch (err) { console.error("Erreur chargement produits:", err); }
+    } catch (err) {
+      console.error("Erreur chargement produits:", err);
+    }
   };
 
   isWorkflowDisabled = () => this.state.cancelablePayment || this.state.workFlowInProgress;
+
   runWorkflow = async (workflowName, workflowFn) => {
     this.setState({ workFlowInProgress: workflowName });
-    try { await workflowFn(); } finally { this.setState({ workFlowInProgress: null }); }
+    try {
+      await workflowFn();
+    } finally {
+      this.setState({ workFlowInProgress: null });
+    }
   };
 
   initializeBackendClientAndTerminal(url) {
@@ -99,7 +111,6 @@ class App extends Component {
       }),
       onConnectionStatusChange: Logger.tracedFn("onConnectionStatusChange", "...", ev => this.setState({ connectionStatus: ev.status, reader: null }))
     });
-    // watchObject (inchangé)
     Logger.watchObject(this.client, "backend", { createConnectionToken: {}, registerDevice: {}, createPaymentIntent: {}, capturePaymentIntent: {}, savePaymentMethodToCustomer: {} });
     Logger.watchObject(this.terminal, "terminal", { discoverReaders: {}, connectReader: {}, disconnectReader: {}, setReaderDisplay: {}, collectPaymentMethod: {}, cancelCollectPaymentMethod: {}, processPayment: {}, readReusableCard: {}, cancelReadReusableCard: {}, collectRefundPaymentMethod: {}, processRefund: {}, cancelCollectRefundPaymentMethod: {} });
   }
@@ -124,8 +135,9 @@ class App extends Component {
   };
   disconnectReader = async () => {
     await this.terminal.disconnectReader();
-    this.setState({ reader: null, sessionActive: false, sessionStartTime: null, pendingPaymentIntentId: null });
+    this.setState({ reader: null, sessionActive: false });
     if (this.timerInterval) clearInterval(this.timerInterval);
+    this.startTime = null;
   };
   registerAndConnectNewReader = async (label, registrationCode, location) => {
     try {
@@ -188,10 +200,10 @@ class App extends Component {
       this.pendingPaymentIntentId = confirmResult.paymentIntent.id;
       this.currentAuthorizedAmount = authAmount;
       this.pricePerMinute = pricePerMinute;
-      const startTime = Date.now();
-      this.setState({ sessionStartTime: startTime, sessionActive: true, showEmailForm: false, paymentInProgress: false });
+      this.startTime = Date.now();
+      this.setState({ sessionActive: true, showEmailForm: false, paymentInProgress: false });
       if (this.timerInterval) clearInterval(this.timerInterval);
-      this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
+      this.timerInterval = setInterval(() => this.forceUpdate(), 1000);
       console.log(`Pré-autorisation réussie, autorisé ${authAmount} centimes`);
     } catch (err) {
       console.error(err);
@@ -222,9 +234,9 @@ class App extends Component {
   cancelEmailForm = () => this.setState({ showProductSelection: true, selectedProduct: null, showEmailForm: false });
 
   checkReminderAndUpdate = () => {
-    const { sessionStartTime, selectedProduct, wantReminder, reminderSent, customerEmail, backendURL } = this.state;
-    if (!sessionStartTime || !selectedProduct) return;
-    const elapsedMs = Date.now() - sessionStartTime;
+    const { selectedProduct, wantReminder, reminderSent, customerEmail, backendURL } = this.state;
+    if (!this.startTime || !selectedProduct) return;
+    const elapsedMs = Date.now() - this.startTime;
     const elapsedMinutes = Math.floor(elapsedMs / 60000);
     const chosenMinutes = parseInt(selectedProduct.name.split(' ')[0]);
     if (wantReminder && !reminderSent && chosenMinutes > 5 && elapsedMinutes >= chosenMinutes - 5) {
@@ -233,6 +245,7 @@ class App extends Component {
     }
     this.forceUpdate();
   };
+
   sendReminder = async () => {
     const { customerEmail, selectedProduct, backendURL } = this.state;
     if (!customerEmail || !selectedProduct) return;
@@ -243,118 +256,93 @@ class App extends Component {
     } catch (err) { console.error("Erreur envoi rappel:", err); }
   };
 
-endSession = async () => {
-  if (this.state.paymentInProgress) return;
-  if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
-    alert("Aucune session en cours");
-    return;
-  }
+  endSession = async () => {
+    if (this.state.paymentInProgress) return;
+    if (!this.startTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
+      alert("Aucune session en cours");
+      return;
+    }
 
-  this.setState({ paymentInProgress: true });
+    this.setState({ paymentInProgress: true });
 
-  // Calcul du temps écoulé en minutes (entier inférieur)
-  const elapsedMs = Date.now() - this.state.sessionStartTime;
-  const elapsedMinutes = Math.floor(elapsedMs / 60000);
-  const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
+    const elapsedMs = Date.now() - this.startTime;
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
+    const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
+    let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
+    const totalDue = this.state.selectedProduct.price + extraAmount;
 
-  // Temps supplémentaire = max(0, temps écoulé - temps choisi)
-  let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
-  const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
-  const totalDue = this.state.selectedProduct.price + extraAmount;
+    console.log(`[endSession] elapsedMs=${elapsedMs}, elapsedMinutes=${elapsedMinutes}, chosenMinutes=${chosenMinutes}, extraMinutes=${extraMinutes}, totalDue=${totalDue}`);
 
-  console.log(`[endSession] elapsedMinutes=${elapsedMinutes}, chosen=${chosenMinutes}, extraMinutes=${extraMinutes}, totalDue=${totalDue}`);
-
-  let currentAuthorized = this.currentAuthorizedAmount;
-  let attempts = 0;
-  const INCREMENT_STEP_CENTS = 500; // 5€ par pas
-  const MAX_INCREMENT_ATTEMPTS = 10;
-
-  while (currentAuthorized < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
-    const nextAmount = Math.min(totalDue, currentAuthorized + INCREMENT_STEP_CENTS);
-    try {
-      const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentIntentId: this.pendingPaymentIntentId,
-          newAmount: nextAmount
-        })
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Échec incrémentation");
+    let currentAuthorized = this.currentAuthorizedAmount;
+    let attempts = 0;
+    while (currentAuthorized < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
+      const nextAmount = Math.min(totalDue, currentAuthorized + INCREMENT_STEP_CENTS);
+      try {
+        const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentIntentId: this.pendingPaymentIntentId, newAmount: nextAmount })
+        });
+        if (!response.ok) throw new Error((await response.json()).error);
+        currentAuthorized = nextAmount;
+        console.log(`Incrémentation réussie à ${nextAmount} centimes`);
+      } catch (err) {
+        console.error(`Incrémentation refusée à ${nextAmount} centimes :`, err);
+        break;
       }
-      currentAuthorized = nextAmount;
-      console.log(`Incrémentation réussie à ${nextAmount} centimes`);
-    } catch (err) {
-      console.error(`Incrémentation refusée à ${nextAmount} centimes :`, err);
-      break;
+      attempts++;
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
-    attempts++;
-    await new Promise(resolve => setTimeout(resolve, 200));
-  }
 
-  const finalAmount = currentAuthorized;
-  const capturedMinutes = Math.floor(finalAmount / this.pricePerMinute);
-  const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
+    const finalAmount = currentAuthorized;
+    const capturedMinutes = Math.floor(finalAmount / this.pricePerMinute);
+    const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
 
-  // Construction de la description détaillée
-  let description = `Qnook - ${chosenMinutes} min`;
-  if (capturedExtra > 0) description += ` + ${capturedExtra} min supplémentaire(s)`;
-  description += ` - ${(finalAmount/100).toFixed(2)}€`;
+    let description = `Qnook - ${chosenMinutes} min`;
+    if (capturedExtra > 0) description += ` + ${capturedExtra} min supplémentaire(s)`;
+    description += ` - ${(finalAmount/100).toFixed(2)}€`;
 
-  try {
-    // Mise à jour de la description (non bloquante)
     try {
-      await fetch(`${this.state.backendURL}/update-payment-intent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentIntentId: this.pendingPaymentIntentId,
-          description: description
-        })
+      try {
+        await fetch(`${this.state.backendURL}/update-payment-intent`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentIntentId: this.pendingPaymentIntentId, description })
+        });
+        console.log("Description mise à jour pour le reçu");
+      } catch (descErr) { console.warn("Impossible de mettre à jour la description (non bloquant)"); }
+
+      const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentIntentId: this.pendingPaymentIntentId })
       });
-      console.log("Description mise à jour pour le reçu");
-    } catch (descErr) { console.warn("Impossible de mettre à jour la description (non bloquant)"); }
+      if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
 
-    const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paymentIntentId: this.pendingPaymentIntentId })
-    });
-    if (!captureResponse.ok) {
-      const errorData = await captureResponse.json();
-      throw new Error(errorData.error || "Erreur capture");
-    }
+      let msg = `✅ Paiement réussi !\n📆 Temps choisi : ${chosenMinutes} min (${(this.state.selectedProduct.price/100).toFixed(2)} €)\n`;
+      if (capturedExtra > 0) msg += `➕ Supplément facturé : ${capturedExtra} min (${(capturedExtra * this.pricePerMinute / 100).toFixed(2)} €)\n`;
+      if (extraMinutes > capturedExtra) msg += `⚠️ Temps supplémentaire non facturé : ${extraMinutes - capturedExtra} min (limite carte atteinte).\n`;
+      msg += `💰 Total facturé : ${(finalAmount/100).toFixed(2)} €`;
+      alert(msg);
 
-    let msg = `✅ Paiement réussi !\n📆 Temps choisi : ${chosenMinutes} min (${(this.state.selectedProduct.price/100).toFixed(2)} €)\n`;
-    if (capturedExtra > 0) {
-      msg += `➕ Supplément facturé : ${capturedExtra} min (${(capturedExtra * this.pricePerMinute / 100).toFixed(2)} €)\n`;
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.resetSession();
+    } catch (err) {
+      console.error("Erreur endSession:", err);
+      alert(`❌ Erreur : ${err.message}`);
+    } finally {
+      this.setState({ paymentInProgress: false });
     }
-    if (extraMinutes > capturedExtra) {
-      msg += `⚠️ Temps supplémentaire non facturé : ${extraMinutes - capturedExtra} min (limite carte atteinte).\n`;
-    }
-    msg += `💰 Total facturé : ${(finalAmount/100).toFixed(2)} €`;
-    alert(msg);
-
-    if (this.timerInterval) clearInterval(this.timerInterval);
-    this.resetSession();
-  } catch (err) {
-    console.error("Erreur endSession:", err);
-    alert(`❌ Erreur : ${err.message}`);
-  } finally {
-    this.setState({ paymentInProgress: false });
-  }
-};
+  };
 
   resetSession = () => {
     this.setState({
-      sessionActive: false, sessionStartTime: null, showProductSelection: true, selectedProduct: null,
+      sessionActive: false, showProductSelection: true, selectedProduct: null,
       chargeAmount: 100, paymentInProgress: false, showEmailForm: false, emailSubmitted: false,
       reminderSent: false, pendingPaymentIntentId: null, currentAuthorizedAmount: 0, pricePerMinute: 0
     });
     if (this.timerInterval) clearInterval(this.timerInterval);
+    this.startTime = null;
   };
+
   cancelSession = () => this.resetSession();
 
   collectRefundPaymentMethod = async () => { /* inchangé */ };
@@ -391,6 +379,7 @@ endSession = async () => {
     const { backendURL, cancelablePayment, reader, discoveredReaders, usingSimulator, showProductSelection,
             selectedProduct, sessionActive, paymentInProgress, showEmailForm, wantReceipt, wantReminder,
             customerEmail, emailSubmitted, products, selectedTestCard } = this.state;
+
     if (showProductSelection && backendURL && reader && !sessionActive && !showEmailForm) {
       if (products.length === 0) return <div>Chargement des produits...</div>;
       return (<div><h2 style={{ textAlign: 'center' }}>Choisissez votre durée</h2><div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'center' }}>
@@ -399,6 +388,7 @@ endSession = async () => {
         </button>))}
       </div></div>);
     }
+
     if (showEmailForm && !emailSubmitted) {
       return (<div style={{ maxWidth: '500px', margin: '0 auto', padding: '20px', border: '1px solid #ccc', borderRadius: '10px' }}>
         <h2>Options de la session</h2><p>Vous avez choisi : <strong>{selectedProduct?.name} ({this.renderPrice(selectedProduct)})</strong></p>
@@ -414,10 +404,12 @@ endSession = async () => {
         </div>
       </div>);
     }
+
     if (!backendURL && !reader) return <BackendURLForm onSetBackendURL={this.onSetBackendURL} />;
     if (!reader) return <Readers onClickDiscover={() => this.discoverReaders()} onClickCancelDiscover={() => this.cancelDiscoverReaders()} onSubmitRegister={this.registerAndConnectNewReader} readers={discoveredReaders} onConnectToReader={this.connectToReader} handleUseSimulator={this.connectToSimulator} listLocations={this.client.listLocations} />;
-    if (sessionActive) {
-      const elapsedMs = this.state.sessionStartTime ? Date.now() - this.state.sessionStartTime : 0;
+
+    if (sessionActive && this.startTime) {
+      const elapsedMs = Date.now() - this.startTime;
       const totalSeconds = Math.floor(elapsedMs / 1000);
       const elapsedMinutes = Math.floor(totalSeconds / 60);
       const elapsedSeconds = totalSeconds % 60;
