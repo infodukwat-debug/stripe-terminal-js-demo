@@ -673,7 +673,7 @@ class App extends Component {
         <div style={{ maxWidth: '500px', margin: '0 auto', padding: '20px', border: '1px solid #ccc', borderRadius: '10px' }}>
           <h2>Options de la session</h2>
           <p>Vous avez choisi : <strong>{selectedProduct?.name} ({this.renderPrice(selectedProduct)})</strong></p>
-          <p><strong>Information :</strong> Une pré-autorisation majorée sera effectuée. En cas de dépassement, l'autorisation sera augmentée automatiquement jusqu'à la limite de votre carte. Seul le temps réel sera débité.</p>
+          <p><strong>Information :</strong> Une pré-autorisation majorée sera effectuée pour couvrir un éventuel dépassement. Seul le temps réel sera débité.</p>
           <div style={{ marginBottom: '10px' }}>
             <label>
               <input type="checkbox" checked={wantReceipt} onChange={this.handleWantReceiptChange} />
