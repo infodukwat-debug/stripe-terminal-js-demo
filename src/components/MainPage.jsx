@@ -419,43 +419,69 @@ class App extends Component {
     }
   };
 
-  endSession = async () => {
-    if (this.state.paymentInProgress) return;
-    if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
-      alert("Aucune session en cours");
-      return;
-    }
+endSession = async () => {
+  if (this.state.paymentInProgress) return;
+  if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
+    alert("Aucune session en cours");
+    return;
+  }
 
-    this.setState({ paymentInProgress: true });
+  this.setState({ paymentInProgress: true });
 
-    const elapsedMs = Date.now() - this.state.sessionStartTime;
-    const elapsedMinutes = Math.floor(elapsedMs / 60000);
-    const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
-    let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
-    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
-    const totalAmount = this.state.selectedProduct.price + extraAmount;
+  // Calcul du temps et des montants
+  const elapsedMs = Date.now() - this.state.sessionStartTime;
+  const elapsedMinutes = Math.floor(elapsedMs / 60000);
+  const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
+  let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+  const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
+  const totalAmount = this.state.selectedProduct.price + extraAmount;
 
-    try {
-      const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
+  try {
+    // 1. Vérifier si le montant total dépasse l'autorisation actuelle
+    if (totalAmount > this.currentAuthorizedAmount) {
+      console.log(`⚠️ Montant total (${totalAmount}) > autorisation actuelle (${this.currentAuthorizedAmount}) → incrémentation finale`);
+      const incResponse = await fetch(`${this.state.backendURL}/increment-authorization`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentIntentId: this.pendingPaymentIntentId })
+        body: JSON.stringify({
+          paymentIntentId: this.pendingPaymentIntentId,
+          newAmount: totalAmount
+        })
       });
-      if (!captureResponse.ok) {
-        const errorData = await captureResponse.json();
-        throw new Error(errorData.error || "Erreur lors de la capture");
+      if (!incResponse.ok) {
+        const errorData = await incResponse.json();
+        throw new Error(errorData.error || "Échec de l'incrémentation finale");
       }
-
-      alert(`Paiement réussi !\nTemps réel : ${elapsedMinutes} min\nSupplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\nTotal facturé : ${(totalAmount/100).toFixed(2)} €`);
-      if (this.timerInterval) clearInterval(this.timerInterval);
-      this.resetSession();
-    } catch (err) {
-      console.error("Erreur endSession:", err);
-      alert(`Erreur : ${err.message}`);
-    } finally {
-      this.setState({ paymentInProgress: false });
+      // Mettre à jour l'autorisation locale
+      this.currentAuthorizedAmount = totalAmount;
+      console.log(`✅ Autorisation incrémentée à ${totalAmount} centimes`);
+    } else {
+      console.log(`ℹ️ Montant total (${totalAmount}) déjà couvert par l'autorisation (${this.currentAuthorizedAmount})`);
     }
-  };
+
+    // 2. Capture finale (Stripe débitera le montant total, limité à l'autorisation)
+    const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paymentIntentId: this.pendingPaymentIntentId })
+    });
+    if (!captureResponse.ok) {
+      const errorData = await captureResponse.json();
+      throw new Error(errorData.error || "Erreur lors de la capture");
+    }
+
+    // 3. Succès – affichage avec séparation temps choisi / supplément
+    alert(`✅ Paiement réussi !\n📆 Temps choisi : ${chosenMinutes} min (${(this.state.selectedProduct.price/100).toFixed(2)} €)\n➕ Supplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\n💰 Total facturé : ${(totalAmount/100).toFixed(2)} €`);
+
+    if (this.timerInterval) clearInterval(this.timerInterval);
+    this.resetSession();
+  } catch (err) {
+    console.error("Erreur endSession:", err);
+    alert(`❌ Erreur : ${err.message}`);
+  } finally {
+    this.setState({ paymentInProgress: false });
+  }
+};
 
   resetSession = () => {
     this.setState({
