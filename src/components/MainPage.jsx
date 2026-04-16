@@ -15,8 +15,8 @@ import Logs from "../Logs/Logs.jsx";
 import { css } from "emotion";
 
 const EXTRA_MINUTE_PRICE = 100; // 1,00 € par minute supplémentaire
-const INCREMENT_MARGIN_MINUTES = 1;   // déclenchement rapide
-const INCREMENT_STEP_MINUTES = 5;     // incrémentation par paliers de 5 minutes
+const INCREMENT_STEP_CENTS = 500;   // palier de 5€ par incrémentation (à ajuster)
+const MAX_INCREMENT_ATTEMPTS = 10;  // maximum 10 tentatives d'incrémentation
 
 // Liste des cartes de test Stripe
 const testCards = [
@@ -65,7 +65,6 @@ class App extends Component {
       selectedTestCard: testCards[0],
       pendingPaymentIntentId: null,
       currentAuthorizedAmount: 0,
-      currentAuthorizedMinutes: 0,
       pricePerMinute: 0,
     };
     this.timerInterval = null;
@@ -279,8 +278,6 @@ class App extends Component {
 
       this.pendingPaymentIntentId = confirmResult.paymentIntent.id;
       this.currentAuthorizedAmount = authAmount;
-      const authorizedMinutes = Math.floor(authAmount / pricePerMinute);
-      this.currentAuthorizedMinutes = authorizedMinutes;
       this.pricePerMinute = pricePerMinute;
 
       const startTime = Date.now();
@@ -292,7 +289,7 @@ class App extends Component {
       });
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
-      console.log(`Pré-autorisation réussie, autorisé jusqu'à ${authorizedMinutes} min.`);
+      console.log(`Pré-autorisation réussie, autorisé ${authAmount} centimes`);
     } catch (err) {
       console.error("Erreur startPaymentAuthorization:", err);
       alert(`Erreur : ${err.message}`);
@@ -349,50 +346,7 @@ class App extends Component {
     });
   };
 
-  checkAndIncrementAuthorization = async () => {
-    const { sessionStartTime, currentAuthorizedMinutes, pricePerMinute, pendingPaymentIntentId, backendURL } = this.state;
-    if (!sessionStartTime || !pendingPaymentIntentId) return;
-
-    const elapsedMs = Date.now() - sessionStartTime;
-    const elapsedMinutes = Math.floor(elapsedMs / 60000);
-    const requiredMinutes = elapsedMinutes + INCREMENT_MARGIN_MINUTES;
-
-    const MAX_SESSION_MINUTES = 120; // 2 heures max
-    if (requiredMinutes > MAX_SESSION_MINUTES) {
-      alert("Durée maximale de session atteinte (2h). Veuillez libérer la cabine.");
-      this.cancelSession();
-      return;
-    }
-
-    if (requiredMinutes > currentAuthorizedMinutes) {
-      let newMinutes = currentAuthorizedMinutes + INCREMENT_STEP_MINUTES;
-      if (newMinutes > requiredMinutes) newMinutes = requiredMinutes;
-      const newAmount = Math.ceil(newMinutes * pricePerMinute);
-
-      try {
-        const response = await fetch(`${backendURL}/increment-authorization`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            paymentIntentId: pendingPaymentIntentId,
-            newAmount: newAmount
-          })
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "Échec incrémentation");
-        }
-        this.currentAuthorizedAmount = newAmount;
-        this.currentAuthorizedMinutes = newMinutes;
-        console.log(`✅ Incrémenté à ${newMinutes} min (${newAmount} centimes)`);
-      } catch (err) {
-        console.error("❌ Incrémentation refusée par Stripe :", err);
-        alert("Attention : votre carte ne permet pas de couvrir davantage de temps. La session sera interrompue si vous dépassez la durée autorisée.");
-        // On arrête d'incrémenter
-      }
-    }
-  };
-
+  // Vérification du rappel uniquement (plus d'incrémentation pendant la session)
   checkReminderAndUpdate = () => {
     const { sessionStartTime, selectedProduct, wantReminder, reminderSent, customerEmail, backendURL } = this.state;
     if (!sessionStartTime || !selectedProduct) return;
@@ -406,7 +360,6 @@ class App extends Component {
       this.setState({ reminderSent: true });
     }
 
-    this.checkAndIncrementAuthorization();
     this.forceUpdate();
   };
 
@@ -430,6 +383,7 @@ class App extends Component {
     }
   };
 
+  // Fin de session : incrémentation séquentielle jusqu'au montant dû ou refus
   endSession = async () => {
     if (this.state.paymentInProgress) return;
     if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
@@ -446,13 +400,43 @@ class App extends Component {
     const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
     const totalDue = this.state.selectedProduct.price + extraAmount;
 
-    const captureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
-    const capturedMinutes = Math.floor(captureAmount / this.pricePerMinute);
+    let currentAuthorized = this.currentAuthorizedAmount;
+    let attempts = 0;
+
+    // Incrémentation séquentielle par paliers jusqu'à atteindre totalDue ou échec
+    while (currentAuthorized < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
+      const nextAmount = Math.min(totalDue, currentAuthorized + INCREMENT_STEP_CENTS);
+      try {
+        const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paymentIntentId: this.pendingPaymentIntentId,
+            newAmount: nextAmount
+          })
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Échec incrémentation");
+        }
+        currentAuthorized = nextAmount;
+        console.log(`Incrémentation réussie à ${nextAmount} centimes`);
+      } catch (err) {
+        console.error(`Incrémentation refusée à ${nextAmount} centimes :`, err);
+        break; // Arrêter les tentatives
+      }
+      attempts++;
+      // Petit délai pour éviter de surcharger l'API (optionnel)
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    const finalAmount = currentAuthorized;
+    const capturedMinutes = Math.floor(finalAmount / this.pricePerMinute);
     const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
 
     let description = `Qnook - ${chosenMinutes} min`;
     if (capturedExtra > 0) description += ` + ${capturedExtra} min supp`;
-    description += ` - ${(captureAmount/100).toFixed(2)}€`;
+    description += ` - ${(finalAmount/100).toFixed(2)}€`;
 
     try {
       // Mise à jour de la description (non bloquante)
@@ -484,7 +468,7 @@ class App extends Component {
       if (extraMinutes > capturedExtra) {
         msg += `⚠️ Temps supplémentaire non facturé : ${extraMinutes - capturedExtra} min (limite carte atteinte).\n`;
       }
-      msg += `💰 Total facturé : ${(captureAmount/100).toFixed(2)} €`;
+      msg += `💰 Total facturé : ${(finalAmount/100).toFixed(2)} €`;
       alert(msg);
 
       if (this.timerInterval) clearInterval(this.timerInterval);
@@ -510,7 +494,6 @@ class App extends Component {
       reminderSent: false,
       pendingPaymentIntentId: null,
       currentAuthorizedAmount: 0,
-      currentAuthorizedMinutes: 0,
       pricePerMinute: 0,
     });
     if (this.timerInterval) clearInterval(this.timerInterval);
