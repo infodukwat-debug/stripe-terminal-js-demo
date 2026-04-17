@@ -426,8 +426,8 @@ class App extends Component {
       let attempts = 0;
       const stepCents = Math.ceil(this.pricePerMinute * INCREMENT_STEP_MINUTES);
       while (currentAuth < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
-        const newAmount = Math.min(totalDue, currentAuthorized + stepCents);
-        const roundedAmount = Math.ceil(newAmount); // Arrondi supérieur pour éviter les décimales
+        const nextAmount = currentAuth + stepCents;
+        const roundedAmount = Math.ceil(Math.min(totalDue, nextAmount)); // Définir roundedAmount
         try {
           const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
             method: 'POST',
