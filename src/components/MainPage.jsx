@@ -20,7 +20,27 @@ const MAX_INCREMENT_ATTEMPTS = 20;
 
 const testCards = [
   { name: "Visa (succès)", number: "4242424242424242", type: "visa" },
+  { name: "Visa Débit (succès)", number: "4000056655665556", type: "visa_debit" },
+  { name: "Mastercard (succès)", number: "5555555555554444", type: "mastercard" },
+  { name: "Mastercard Débit (succès)", number: "5208288282828210", type: "mastercard_debit" },
+  { name: "Mastercard Prépayée (succès)", number: "5105105105105100", type: "mastercard_prepaid" },
+  { name: "American Express (succès)", number: "378282246310005", type: "amex" },
+  { name: "American Express 2 (succès)", number: "371449635398431", type: "amex2" },
+  { name: "Discover (succès)", number: "6011111111111117", type: "discover" },
+  { name: "Discover 2 (succès)", number: "6011000990139424", type: "discover2" },
+  { name: "Diners Club (succès)", number: "3056930009020804", type: "diners" },
+  { name: "JCB (succès)", number: "3566002820360505", type: "jcb" },
+  { name: "UnionPay (succès)", number: "6200000000000005", type: "unionpay" },
+  { name: "Interac (succès)", number: "4506445006931933", type: "interac" },
+  { name: "Carte Bancaire / Visa (succès)", number: "4000025000001001", type: "cartes_bancaires_visa_debit" },
+  { name: "Carte Bancaire / Mastercard (succès)", number: "5555552500001001", type: "cartes_bancaires_mastercard_debit" },
+  { name: "Girocard (succès)", number: "4711009900000316877", type: "girocard_debit" },
+  { name: "Refus générique", number: "4000000000000002", type: "charge_declined" },
   { name: "Refus - fonds insuffisants", number: "4000000000009995", type: "charge_declined_insufficient_funds" },
+  { name: "Refus - carte perdue", number: "4000000000009987", type: "charge_declined_lost_card" },
+  { name: "Refus - carte volée", number: "4000000000009979", type: "charge_declined_stolen_card" },
+  { name: "Refus - carte expirée", number: "4000000000000069", type: "charge_declined_expired_card" },
+  { name: "Refus - erreur traitement", number: "4000000000000119", type: "charge_declined_processing_error" },
 ];
 
 class App extends Component {
