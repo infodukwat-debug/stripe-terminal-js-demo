@@ -424,20 +424,21 @@ class App extends Component {
     if (totalDue > this.currentAuthorizedAmount) {
       let currentAuth = this.currentAuthorizedAmount;
       let attempts = 0;
-      const stepCents = this.pricePerMinute * INCREMENT_STEP_MINUTES;
+      const stepCents = Math.ceil(this.pricePerMinute * INCREMENT_STEP_MINUTES);
       while (currentAuth < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
         const nextAmount = Math.min(totalDue, currentAuth + stepCents);
+        const roundedAmount = Math.ceil(newAmount);
         try {
           const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               paymentIntentId: this.pendingPaymentIntentId,
-              newAmount: nextAmount
+              newAmount: roundedAmount
             })
           });
           if (!response.ok) throw new Error((await response.json()).error);
-          currentAuth = nextAmount;
+          currentAuth = roundedAmount;
         } catch (err) {
           console.error("Incrémentation refusée", err);
           break;
