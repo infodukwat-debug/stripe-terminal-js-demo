@@ -436,9 +436,11 @@ class App extends Component {
   const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
 
   // Description pour le reçu
-  let description = `Qnook - ${chosenMinutes} min`;
-  if (capturedExtra > 0) description += ` + ${capturedExtra} min supp`;
-  description += ` - ${(finalCaptureAmount/100).toFixed(2)}€`;
+  let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
+ if (capturedExtra > 0) {
+    description += `\nSupplément : ${capturedExtra} min (${extraPrice} €)`;
+}
+description += `\nTotal : ${totalPrice} €`;
 
   try {
     // Mise à jour description (optionnelle)
