@@ -67,7 +67,7 @@ class App extends Component {
       currentAuthorizedAmount: 0,
       pricePerMinute: 0,
     };
-    this.timerInterval = null;
+  
     this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
     
   }
