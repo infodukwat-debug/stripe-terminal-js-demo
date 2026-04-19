@@ -402,105 +402,123 @@ class App extends Component {
   };
 
   endSession = async () => {
-    if (this.state.paymentInProgress) return;
-    if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
-      alert("Aucune session en cours");
-      return;
-    }
+  if (this.state.paymentInProgress) return;
+  if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
+    alert("Aucune session en cours");
+    return;
+  }
 
-    this.setState({ paymentInProgress: true });
+  this.setState({ paymentInProgress: true });
 
-    const elapsedMs = Date.now() - this.state.sessionStartTime;
-    const elapsedMinutes = Math.floor(elapsedMs / 60000);
-    const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
-    let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
-    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
-    const totalDue = this.state.selectedProduct.price + extraAmount;
+  const elapsedMs = Date.now() - this.state.sessionStartTime;
+  const elapsedMinutes = Math.floor(elapsedMs / 60000);
+  const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
+  let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+  const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
+  const totalDue = this.state.selectedProduct.price + extraAmount;
 
-    console.log(`[endSession] temps réel=${elapsedMinutes} min, dû=${totalDue} cents`);
+  console.log(`[endSession] temps réel=${elapsedMinutes} min, dû=${totalDue} cents, autorisé initial=${this.currentAuthorizedAmount}`);
 
-    let finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
+  let finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
+  let needIncrement = totalDue > this.currentAuthorizedAmount;
 
-    if (totalDue > this.currentAuthorizedAmount) {
-      let currentAuth = this.currentAuthorizedAmount;
-      let attempts = 0;
-      const stepCents = Math.ceil(this.pricePerMinute * INCREMENT_STEP_MINUTES);
-      while (currentAuth < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
-        const nextAmount = currentAuth + stepCents;
-        const roundedAmount = Math.ceil(Math.min(totalDue, nextAmount)); // Définir roundedAmount
-        try {
-          const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              paymentIntentId: this.pendingPaymentIntentId,
-              newAmount: roundedAmount
-            })
-          });
-          if (!response.ok) throw new Error((await response.json()).error);
-          currentAuth = roundedAmount;
-        } catch (err) {
-          console.error("Incrémentation refusée", err);
-          break;
-        }
-        attempts++;
-        await new Promise(r => setTimeout(r, 300));
-      }
-      finalCaptureAmount = Math.min(totalDue, currentAuth);
-    }
-
-    const capturedMinutes = Math.floor(finalCaptureAmount / this.pricePerMinute);
-    const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
-
-    // Construction de la description détaillée pour le reçu
-    const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
-    const extraPrice = (capturedExtra * this.pricePerMinute / 100).toFixed(2);
-    const totalPrice = (finalCaptureAmount / 100).toFixed(2);
-    let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
-    if (capturedExtra > 0) {
-      description += `\nSupplément : ${capturedExtra} min (${extraPrice} €)`;
-    }
-    description += `\nTotal : ${totalPrice} €`;
-
-    try {
+  if (needIncrement) {
+    console.log("[inc] Début incrémentation pour atteindre le montant dû");
+    let currentAuth = this.currentAuthorizedAmount;
+    let attempts = 0;
+    const stepCents = Math.ceil(this.pricePerMinute * INCREMENT_STEP_MINUTES);
+    while (currentAuth < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
+      const nextAmount = Math.min(totalDue, currentAuth + stepCents);
+      const roundedAmount = Math.ceil(nextAmount);
+      console.log(`[inc] Tentative ${attempts+1}: newAmount=${roundedAmount} cents`);
       try {
-       const updateResponse = await fetch(`${this.state.backendURL}/update-payment-intent`, {
+        const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             paymentIntentId: this.pendingPaymentIntentId,
-            description: description
+            newAmount: roundedAmount
           })
         });
-        const updateData = await updateResponse.json();
-        console.log("📝 Réponse mise à jour description :", updateData);
-      } catch (e) { console.warn(e); }
-
-      const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentIntentId: this.pendingPaymentIntentId })
-      });
-      if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
-
-      let msg = `✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n`;
-      msg += `💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €\n`;
-      if (extraMinutes > 0) msg += `⏱️ Dont supplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\n`;
-      if (finalCaptureAmount < totalDue) {
-        msg += `⚠️ Note : votre carte n'a pas permis de couvrir la totalité du temps. Seul ${(finalCaptureAmount/100).toFixed(2)} € a été débité.`;
+        if (!response.ok) throw new Error((await response.json()).error);
+        currentAuth = roundedAmount;
+        console.log(`[inc] Succès, nouvelle autorisation = ${currentAuth} cents`);
+      } catch (err) {
+        console.error("[inc] Échec incrémentation:", err);
+        break;
       }
-      alert(msg);
-
-      if (this.timerInterval) clearInterval(this.timerInterval);
-      this.resetSession();
-    } catch (err) {
-      console.error("Erreur endSession:", err);
-      alert(`❌ Erreur : ${err.message}`);
-    } finally {
-      this.setState({ paymentInProgress: false });
+      attempts++;
+      await new Promise(r => setTimeout(r, 300));
     }
-  };
+    finalCaptureAmount = Math.min(totalDue, currentAuth);
+    console.log(`[inc] Montant final capturable = ${finalCaptureAmount} cents`);
+  } else {
+    console.log("[inc] Pas d'incrémentation nécessaire, montant dû déjà couvert");
+  }
 
+  const capturedMinutes = Math.floor(finalCaptureAmount / this.pricePerMinute);
+  const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
+
+  // Construction de la description détaillée (3 lignes)
+  const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
+  const extraPrice = (capturedExtra * this.pricePerMinute / 100).toFixed(2);
+  const totalPrice = (finalCaptureAmount / 100).toFixed(2);
+  let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
+  if (capturedExtra > 0) {
+    description += `\nSupplément : ${capturedExtra} min (${extraPrice} €)`;
+  }
+  description += `\nTotal : ${totalPrice} €`;
+
+  console.log(`[update] Description finale: ${description}`);
+
+  try {
+    // 1. Mettre à jour la description du PaymentIntent
+    const updateResponse = await fetch(`${this.state.backendURL}/update-payment-intent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        paymentIntentId: this.pendingPaymentIntentId,
+        description: description
+      })
+    });
+    if (!updateResponse.ok) {
+      console.warn("❌ Échec mise à jour description, code:", updateResponse.status);
+    } else {
+      console.log("✅ Description mise à jour");
+    }
+
+    // 2. Capturer UNIQUEMENT le montant dû (et non toute l'autorisation)
+    const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        paymentIntentId: this.pendingPaymentIntentId,
+        amountToCapture: finalCaptureAmount   // 👈 Clé : montant partiel
+      })
+    });
+    if (!captureResponse.ok) {
+      const errorData = await captureResponse.json();
+      throw new Error(errorData.error || "Erreur capture");
+    }
+
+    let msg = `✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n`;
+    msg += `💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €\n`;
+    if (extraMinutes > 0) msg += `⏱️ Dont supplément : ${extraMinutes} min (${(extraAmount/100).toFixed(2)} €)\n`;
+    if (finalCaptureAmount < totalDue) {
+      msg += `⚠️ Note : votre carte n'a pas permis de couvrir la totalité du temps. Seul ${(finalCaptureAmount/100).toFixed(2)} € a été débité.`;
+    }
+    alert(msg);
+
+    if (this.timerInterval) clearInterval(this.timerInterval);
+    this.resetSession();
+  } catch (err) {
+    console.error("Erreur endSession:", err);
+    alert(`❌ Erreur : ${err.message}`);
+  } finally {
+    this.setState({ paymentInProgress: false });
+  }
+};
+  
   resetSession = () => {
     this.setState({
       sessionActive: false,
