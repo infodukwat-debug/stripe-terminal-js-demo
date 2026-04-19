@@ -269,7 +269,7 @@ class App extends Component {
       const createIntentResponse = await this.client.createPaymentIntent({
         amount: authAmount,
         currency: currency,
-        description: `Montant dû - ${selectedProduct.name}`, // Pré-autorisation Qnook
+        description: `Produit sélectionné - ${selectedProduct.name}`, // Pré-autorisation Qnook
         paymentMethodTypes: ["card_present"],
         email: wantReceipt ? customerEmail : undefined
       });
