@@ -464,7 +464,7 @@ class App extends Component {
 
     try {
       try {
-        await fetch(`${this.state.backendURL}/update-payment-intent`, {
+       const updateResponse = await fetch(`${this.state.backendURL}/update-payment-intent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -472,6 +472,8 @@ class App extends Component {
             description: description
           })
         });
+        const updateData = await updateResponse.json();
+        console.log("📝 Réponse mise à jour description :", updateData);
       } catch (e) { console.warn(e); }
 
       const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
