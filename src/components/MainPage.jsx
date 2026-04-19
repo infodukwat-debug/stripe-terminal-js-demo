@@ -68,6 +68,8 @@ class App extends Component {
       pricePerMinute: 0,
     };
     this.timerInterval = null;
+    this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
+    
   }
 
 componentDidMount() {
