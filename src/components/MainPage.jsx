@@ -13,7 +13,7 @@ import Group from "./Group/Group.jsx";
 import Logs from "../Logs/Logs.jsx";
 
 import { css } from "emotion";
-
+const DEFAULT_BACKEND_URL = 'https://qnook-backend-unified.onrender.com'; // ************LIEN DU BACKEND **************
 const EXTRA_MINUTE_PRICE = 100; // 1,00 € par minute supplémentaire
 const INCREMENT_STEP_MINUTES = 5;
 const MAX_INCREMENT_ATTEMPTS = 20;
@@ -28,7 +28,7 @@ class App extends Component {
     super(props);
     this.state = {
       status: "requires_initializing",
-      backendURL: null,
+      backendURL: DEFAULT_BACKEND_URL,
       discoveredReaders: [],
       connectionStatus: "not_connected",
       reader: null,
@@ -70,6 +70,15 @@ class App extends Component {
     this.timerInterval = null;
   }
 
+componentDidMount() {
+  this.initializeDefaultBackend();
+  this.loadProducts();
+}
+
+initializeDefaultBackend = () => {
+  this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
+};
+  
   componentDidMount() {
     this.loadProducts();
   }
@@ -696,7 +705,10 @@ class App extends Component {
     }
 
     // Connexion initiale
-    if (!backendURL && !reader) return <BackendURLForm onSetBackendURL={this.onSetBackendURL} />;
+    if (!this.client) {
+  return <div>Connexion au service...</div>;
+}
+    
     if (!reader) return <Readers onClickDiscover={() => this.discoverReaders()} onClickCancelDiscover={() => this.cancelDiscoverReaders()} onSubmitRegister={this.registerAndConnectNewReader} readers={discoveredReaders} onConnectToReader={this.connectToReader} handleUseSimulator={this.connectToSimulator} listLocations={this.client.listLocations} />;
 
     // Session active
