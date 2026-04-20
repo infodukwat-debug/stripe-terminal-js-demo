@@ -739,7 +739,7 @@ initializeDefaultBackend = () => {
     const { backendURL, reader } = this.state;
     return (
       <div className={css`display: flex; align-items: center; justify-content: center; min-height: 100vh;`}>
-       //{backendURL && reader && <ConnectionInfo backendURL={backendURL} reader={reader} onSetBackendURL={this.onSetBackendURL} onClickDisconnect={this.disconnectReader} />}   pour faire apparaitre deconnecter le simulateur
+     {/* {backendURL && reader && <ConnectionInfo backendURL={backendURL} reader={reader} onSetBackendURL={this.onSetBackendURL} onClickDisconnect={this.disconnectReader} />} */}
         {this.renderForm()}
       </div>
     );
