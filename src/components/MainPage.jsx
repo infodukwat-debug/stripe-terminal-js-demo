@@ -1,5 +1,5 @@
 import React, { Component } from "react";
-
+import VirtualKeyboard from './VirtualKeyboard';
 import Client from "../client";
 import Logger from "../logger";
 
@@ -31,6 +31,7 @@ class App extends Component {
       backendURL: DEFAULT_BACKEND_URL,
       discoveredReaders: [],
       connectionStatus: "not_connected",
+      showKeyboard: false,
       reader: null,
       readerLabel: "",
       registrationCode: "",
@@ -340,7 +341,17 @@ initializeDefaultBackend = () => {
   handleEmailChange = (e) => {
     this.setState({ customerEmail: e.target.value });
   };
+handleEmailFocus = () => {
+  this.setState({ showKeyboard: true });
+};
 
+handleKeyboardChange = (value) => {
+  this.setState({ customerEmail: value });
+};
+
+handleKeyboardEnter = (value) => {
+  this.setState({ showKeyboard: false });
+};
   handleTestCardChange = (e) => {
     const card = testCards.find(c => c.number === e.target.value);
     if (card) this.setState({ selectedTestCard: card });
@@ -693,7 +704,13 @@ initializeDefaultBackend = () => {
           {(wantReceipt || wantReminder) && (
             <div style={{ marginBottom: '10px' }}>
               <label>Email :</label>
-              <input type="email" value={customerEmail} onChange={this.handleEmailChange} style={{ width: '100%', padding: '8px', marginTop: '5px' }} />
+              <input
+  type="email" 
+  value={customerEmail} 
+  onChange={this.handleEmailChange} 
+  onFocus={this.handleEmailFocus}
+  style={{ width: '100%', padding: '8px', marginTop: '5px' }} 
+/>
             </div>
           )}
           <div style={{ marginTop: '20px' }}>
@@ -702,6 +719,12 @@ initializeDefaultBackend = () => {
             </button>
             <button onClick={this.cancelEmailForm} style={{ marginLeft: '10px', padding: '10px 20px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Annuler</button>
           </div>
+          {this.state.showKeyboard && (
+  <VirtualKeyboard 
+    onChange={this.handleKeyboardChange} 
+    onEnter={this.handleKeyboardEnter} 
+  />
+)}
         </div>
       );
     }
