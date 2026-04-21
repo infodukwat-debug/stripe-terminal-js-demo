@@ -498,106 +498,116 @@ class App extends Component {
     }
   };
 
-  endSession = async () => {
-    if (this.state.paymentInProgress) return;
-    if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
-      alert("Aucune session en cours");
-      return;
-    }
+ endSession = async () => {
+  if (this.state.paymentInProgress) return;
+  if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
+    alert("Aucune session en cours");
+    return;
+  }
 
-    this.setState({ paymentInProgress: true });
+  this.setState({ paymentInProgress: true });
 
-    const elapsedMs = Date.now() - this.state.sessionStartTime;
-    const elapsedMinutes = Math.floor(elapsedMs / 60000);
-    const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
-    let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
-    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
-    const totalDue = this.state.selectedProduct.price + extraAmount;
+  const elapsedMs = Date.now() - this.state.sessionStartTime;
+  const elapsedMinutes = Math.floor(elapsedMs / 60000);
+  const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
+  let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+  const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
+  const totalDue = this.state.selectedProduct.price + extraAmount;
 
-    let finalCaptureAmount;
-    let needIncrement = false;
+  let finalCaptureAmount;
+  let needIncrement = false;
 
-    if (extraMinutes === 0) {
-      finalCaptureAmount = this.state.selectedProduct.price;
-    } else {
-      finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
-      needIncrement = totalDue > this.currentAuthorizedAmount;
-    }
+  if (extraMinutes === 0) {
+    finalCaptureAmount = this.state.selectedProduct.price;
+  } else {
+    finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
+    needIncrement = totalDue > this.currentAuthorizedAmount;
+  }
 
-    if (needIncrement) {
-      let currentAuth = this.currentAuthorizedAmount;
-      let attempts = 0;
-      const stepCents = Math.ceil(this.pricePerMinute * INCREMENT_STEP_MINUTES);
-      while (currentAuth < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
-        const nextAmount = Math.min(totalDue, currentAuth + stepCents);
-        const roundedAmount = Math.ceil(nextAmount);
-        try {
-          const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              paymentIntentId: this.pendingPaymentIntentId,
-              newAmount: roundedAmount
-            })
-          });
-          if (!response.ok) throw new Error((await response.json()).error);
-          currentAuth = roundedAmount;
-        } catch (err) {
-          console.error("Incrémentation refusée", err);
-          break;
-        }
-        attempts++;
-        await new Promise(r => setTimeout(r, 300));
-      }
-      finalCaptureAmount = Math.min(totalDue, currentAuth);
-    }
-
-    const capturedMinutes = Math.floor(finalCaptureAmount / this.pricePerMinute);
-    const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
-
-    const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
-    const extraPrice = (capturedExtra * this.pricePerMinute / 100).toFixed(2);
-    const totalPrice = (finalCaptureAmount / 100).toFixed(2);
-    let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
-    if (capturedExtra > 0) {
-      description += `\nSupplément : ${capturedExtra} min (${extraPrice} €)`;
-    }
-    description += `\nTotal : ${totalPrice} €`;
-
-    try {
+  if (needIncrement) {
+    let currentAuth = this.currentAuthorizedAmount;
+    let attempts = 0;
+    const stepCents = Math.ceil(this.pricePerMinute * INCREMENT_STEP_MINUTES);
+    while (currentAuth < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
+      const nextAmount = Math.min(totalDue, currentAuth + stepCents);
+      const roundedAmount = Math.ceil(nextAmount);
       try {
-        await fetch(`${this.state.backendURL}/update-payment-intent`, {
+        const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             paymentIntentId: this.pendingPaymentIntentId,
-            description: description
+            newAmount: roundedAmount
           })
         });
-      } catch (e) {}
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error("Incrémentation refusée par le backend:", errorData.error);
+          // On arrête les tentatives, on garde l'autorisation actuelle
+          break;
+        }
+        currentAuth = roundedAmount;
+      } catch (err) {
+        console.error("Erreur réseau ou Stripe lors de l'incrémentation:", err);
+        // On arrête les tentatives
+        break;
+      }
+      attempts++;
+      await new Promise(r => setTimeout(r, 300));
+    }
+    finalCaptureAmount = Math.min(totalDue, currentAuth);
+  }
 
-      const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
+  const capturedMinutes = Math.floor(finalCaptureAmount / this.pricePerMinute);
+  const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
+
+  const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
+  const extraPrice = (capturedExtra * this.pricePerMinute / 100).toFixed(2);
+  const totalPrice = (finalCaptureAmount / 100).toFixed(2);
+  let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
+  if (capturedExtra > 0) {
+    description += `\nSupplément : ${capturedExtra} min (${extraPrice} €)`;
+  }
+  description += `\nTotal : ${totalPrice} €`;
+
+  try {
+    // Mise à jour description (optionnelle)
+    try {
+      await fetch(`${this.state.backendURL}/update-payment-intent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentIntentId: this.pendingPaymentIntentId,
-          amountToCapture: finalCaptureAmount
+          description: description
         })
       });
-      if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
+    } catch (e) {}
 
-      let msg = `✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`;
-      alert(msg);
+    const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        paymentIntentId: this.pendingPaymentIntentId,
+        amountToCapture: finalCaptureAmount
+      })
+    });
+    if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
 
-      if (this.timerInterval) clearInterval(this.timerInterval);
-      this.resetSession();
-    } catch (err) {
-      console.error("Erreur endSession:", err);
-      alert(`❌ Erreur : ${err.message}`);
-    } finally {
-      this.setState({ paymentInProgress: false });
+    let msg = `✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`;
+    if (extraMinutes > 0 && finalCaptureAmount < totalDue) {
+      msg += `\n⚠️ Note : votre carte n'a pas permis de couvrir tout le supplément. Seul ${(finalCaptureAmount/100).toFixed(2)} € a été débité.`;
     }
-  };
+    alert(msg);
+
+    if (this.timerInterval) clearInterval(this.timerInterval);
+    this.resetSession();
+  } catch (err) {
+    console.error("Erreur endSession:", err);
+    alert(`❌ Erreur : ${err.message}`);
+  } finally {
+    this.setState({ paymentInProgress: false });
+  }
+};
 
   resetSession = () => {
     this.setState({
