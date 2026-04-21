@@ -24,7 +24,7 @@ const testCards = [
   { name: "Refus - fonds insuffisants", number: "4000000000009995", type: "charge_declined_insufficient_funds" },
 ];
 
-// ========== COMPOSANT CLAVIER VIRTUEL INTÉGRÉ (sans dépendance externe) ==========
+// ========== COMPOSANT CLAVIER VIRTUEL COMPACT ==========
 class SimpleKeyboard extends React.Component {
   constructor(props) {
     super(props);
@@ -51,23 +51,34 @@ class SimpleKeyboard extends React.Component {
     const keys = [
       ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '{bksp}'],
       ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
-      ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', '{enter}'],
-      ['z', 'x', 'c', 'v', 'b', 'n', 'm', '@', '.', '{enter}']
+      ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', '@'],
+      ['z', 'x', 'c', 'v', 'b', 'n', 'm', '.', '{enter}']
     ];
 
     return (
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#f0f0f0', padding: '10px', borderTop: '1px solid #ccc', zIndex: 1000 }}>
+      <div style={{ 
+        position: 'fixed', 
+        bottom: 0, 
+        left: 0, 
+        right: 0, 
+        background: '#f0f0f0', 
+        padding: '5px', 
+        borderTop: '1px solid #ccc', 
+        zIndex: 1000,
+        maxHeight: '200px',
+        overflowY: 'auto'
+      }}>
         {keys.map((row, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'center', marginBottom: '5px' }}>
+          <div key={i} style={{ display: 'flex', justifyContent: 'center', marginBottom: '4px' }}>
             {row.map(key => (
               <button
                 key={key}
                 onClick={() => this.handleKeyPress(key)}
                 style={{
-                  width: key === '{enter}' ? '80px' : (key === '{bksp}' ? '70px' : '50px'),
-                  height: '50px',
+                  width: key === '{enter}' ? '60px' : (key === '{bksp}' ? '60px' : '40px'),
+                  height: '40px',
                   margin: '2px',
-                  fontSize: '1.2rem',
+                  fontSize: '1rem',
                   background: '#fff',
                   border: '1px solid #aaa',
                   borderRadius: '5px',
@@ -128,14 +139,13 @@ class App extends Component {
       pendingPaymentIntentId: null,
       currentAuthorizedAmount: 0,
       pricePerMinute: 0,
-      showKeyboard: false,       // Pour le clavier virtuel
+      showKeyboard: false,
     };
   }
 
   componentDidMount() {
     this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
     this.loadProducts();
-    // Connexion automatique au simulateur (optionnel)
     this.autoConnectSimulator();
   }
 
@@ -418,7 +428,6 @@ class App extends Component {
     this.setState({ customerEmail: e.target.value });
   };
 
-  // Gestion du clavier virtuel
   handleEmailFocus = () => {
     this.setState({ showKeyboard: true });
   };
@@ -489,109 +498,106 @@ class App extends Component {
     }
   };
 
-endSession = async () => {
-  if (this.state.paymentInProgress) return;
-  if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
-    alert("Aucune session en cours");
-    return;
-  }
+  endSession = async () => {
+    if (this.state.paymentInProgress) return;
+    if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
+      alert("Aucune session en cours");
+      return;
+    }
 
-  this.setState({ paymentInProgress: true });
+    this.setState({ paymentInProgress: true });
 
-  const elapsedMs = Date.now() - this.state.sessionStartTime;
-  const elapsedMinutes = Math.floor(elapsedMs / 60000);
-  const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
-  let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
-  const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
-  const totalDue = this.state.selectedProduct.price + extraAmount;
+    const elapsedMs = Date.now() - this.state.sessionStartTime;
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
+    const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
+    let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
+    const totalDue = this.state.selectedProduct.price + extraAmount;
 
-  let finalCaptureAmount;
-  let needIncrement = false;
+    let finalCaptureAmount;
+    let needIncrement = false;
 
-  if (extraMinutes === 0) {
-    // Pas de dépassement : on capture uniquement le prix du produit (temps choisi)
-    finalCaptureAmount = this.state.selectedProduct.price;
-    // Pas besoin d'incrémenter
-  } else {
-    // Dépassement : on capture le montant dû (base + supplément), sans dépasser l'autorisation
-    finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
-    needIncrement = totalDue > this.currentAuthorizedAmount;
-  }
+    if (extraMinutes === 0) {
+      finalCaptureAmount = this.state.selectedProduct.price;
+    } else {
+      finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
+      needIncrement = totalDue > this.currentAuthorizedAmount;
+    }
 
-  if (needIncrement) {
-    let currentAuth = this.currentAuthorizedAmount;
-    let attempts = 0;
-    const stepCents = Math.ceil(this.pricePerMinute * INCREMENT_STEP_MINUTES);
-    while (currentAuth < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
-      const nextAmount = Math.min(totalDue, currentAuth + stepCents);
-      const roundedAmount = Math.ceil(nextAmount);
+    if (needIncrement) {
+      let currentAuth = this.currentAuthorizedAmount;
+      let attempts = 0;
+      const stepCents = Math.ceil(this.pricePerMinute * INCREMENT_STEP_MINUTES);
+      while (currentAuth < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
+        const nextAmount = Math.min(totalDue, currentAuth + stepCents);
+        const roundedAmount = Math.ceil(nextAmount);
+        try {
+          const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paymentIntentId: this.pendingPaymentIntentId,
+              newAmount: roundedAmount
+            })
+          });
+          if (!response.ok) throw new Error((await response.json()).error);
+          currentAuth = roundedAmount;
+        } catch (err) {
+          console.error("Incrémentation refusée", err);
+          break;
+        }
+        attempts++;
+        await new Promise(r => setTimeout(r, 300));
+      }
+      finalCaptureAmount = Math.min(totalDue, currentAuth);
+    }
+
+    const capturedMinutes = Math.floor(finalCaptureAmount / this.pricePerMinute);
+    const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
+
+    const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
+    const extraPrice = (capturedExtra * this.pricePerMinute / 100).toFixed(2);
+    const totalPrice = (finalCaptureAmount / 100).toFixed(2);
+    let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
+    if (capturedExtra > 0) {
+      description += `\nSupplément : ${capturedExtra} min (${extraPrice} €)`;
+    }
+    description += `\nTotal : ${totalPrice} €`;
+
+    try {
       try {
-        const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
+        await fetch(`${this.state.backendURL}/update-payment-intent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             paymentIntentId: this.pendingPaymentIntentId,
-            newAmount: roundedAmount
+            description: description
           })
         });
-        if (!response.ok) throw new Error((await response.json()).error);
-        currentAuth = roundedAmount;
-      } catch (err) {
-        console.error("Incrémentation refusée", err);
-        break;
-      }
-      attempts++;
-      await new Promise(r => setTimeout(r, 300));
-    }
-    finalCaptureAmount = Math.min(totalDue, currentAuth);
-  }
+      } catch (e) {}
 
-  const capturedMinutes = Math.floor(finalCaptureAmount / this.pricePerMinute);
-  const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
-
-  const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
-  const extraPrice = (capturedExtra * this.pricePerMinute / 100).toFixed(2);
-  const totalPrice = (finalCaptureAmount / 100).toFixed(2);
-  let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
-  if (capturedExtra > 0) {
-    description += `\nSupplément : ${capturedExtra} min (${extraPrice} €)`;
-  }
-  description += `\nTotal : ${totalPrice} €`;
-
-  try {
-    try {
-      await fetch(`${this.state.backendURL}/update-payment-intent`, {
+      const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentIntentId: this.pendingPaymentIntentId,
-          description: description
+          amountToCapture: finalCaptureAmount
         })
       });
-    } catch (e) {}
+      if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
 
-    const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        paymentIntentId: this.pendingPaymentIntentId,
-        amountToCapture: finalCaptureAmount
-      })
-    });
-    if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
+      let msg = `✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`;
+      alert(msg);
 
-    let msg = `✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`;
-    alert(msg);
-
-    if (this.timerInterval) clearInterval(this.timerInterval);
-    this.resetSession();
-  } catch (err) {
-    console.error("Erreur endSession:", err);
-    alert(`❌ Erreur : ${err.message}`);
-  } finally {
-    this.setState({ paymentInProgress: false });
-  }
-};
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.resetSession();
+    } catch (err) {
+      console.error("Erreur endSession:", err);
+      alert(`❌ Erreur : ${err.message}`);
+    } finally {
+      this.setState({ paymentInProgress: false });
+    }
+  };
 
   resetSession = () => {
     this.setState({
@@ -781,7 +787,16 @@ endSession = async () => {
     // Formulaire email
     if (showEmailForm && !emailSubmitted) {
       return (
-        <div style={{ maxWidth: '500px', margin: '100px auto', padding: '20px', border: '1px solid #ccc', borderRadius: '10px', textAlign: 'center' }}>
+        <div style={{ 
+          maxWidth: '500px', 
+          margin: '50px auto', 
+          padding: '20px', 
+          border: '1px solid #ccc', 
+          borderRadius: '10px', 
+          textAlign: 'center',
+          maxHeight: 'calc(100vh - 250px)',
+          overflowY: 'auto'
+        }}>
           <h2>Options de la session</h2>
           <p>Vous avez choisi : <strong>{selectedProduct?.name} ({this.renderPrice(selectedProduct)})</strong></p>
           <div style={{ marginBottom: '10px' }}>
@@ -800,7 +815,7 @@ endSession = async () => {
                 value={customerEmail} 
                 onChange={this.handleEmailChange} 
                 onFocus={this.handleEmailFocus}
-                style={{ width: '100%', padding: '8px', marginTop: '5px' }} 
+                style={{ width: '100%', padding: '8px', marginTop: '5px', fontSize: '1rem' }} 
               />
             </div>
           )}
@@ -810,12 +825,29 @@ endSession = async () => {
             </button>
             <button onClick={this.cancelEmailForm} style={{ marginLeft: '10px', padding: '10px 20px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Annuler</button>
           </div>
-          {/* AFFICHAGE DU CLAVIER VIRTUEL */}
           {showKeyboard && (
-            <SimpleKeyboard 
-              onChange={this.handleKeyboardChange} 
-              onEnter={this.handleKeyboardEnter} 
-            />
+            <>
+              <div style={{
+                position: 'fixed',
+                bottom: '200px',
+                left: '10px',
+                right: '10px',
+                background: 'white',
+                padding: '10px',
+                border: '1px solid #ccc',
+                borderRadius: '5px',
+                textAlign: 'center',
+                fontSize: '1.2rem',
+                zIndex: 999,
+                boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+              }}>
+                📧 {customerEmail || 'En attente de saisie...'}
+              </div>
+              <SimpleKeyboard 
+                onChange={this.handleKeyboardChange} 
+                onEnter={this.handleKeyboardEnter} 
+              />
+            </>
           )}
         </div>
       );
