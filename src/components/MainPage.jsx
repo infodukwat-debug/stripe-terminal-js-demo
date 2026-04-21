@@ -1,5 +1,5 @@
 import React, { Component } from "react";
-import VirtualKeyboard from './VirtualKeyboard';
+
 import Client from "../client";
 import Logger from "../logger";
 
@@ -13,7 +13,8 @@ import Group from "./Group/Group.jsx";
 import Logs from "../Logs/Logs.jsx";
 
 import { css } from "emotion";
-const DEFAULT_BACKEND_URL = 'https://qnook-backend-unified.onrender.com'; // ************LIEN DU BACKEND **************
+
+const DEFAULT_BACKEND_URL = 'https://qnook-backend-unified.onrender.com';
 const EXTRA_MINUTE_PRICE = 100; // 1,00 € par minute supplémentaire
 const INCREMENT_STEP_MINUTES = 5;
 const MAX_INCREMENT_ATTEMPTS = 20;
@@ -23,6 +24,67 @@ const testCards = [
   { name: "Refus - fonds insuffisants", number: "4000000000009995", type: "charge_declined_insufficient_funds" },
 ];
 
+// ========== COMPOSANT CLAVIER VIRTUEL INTÉGRÉ (sans dépendance externe) ==========
+class SimpleKeyboard extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { value: '' };
+  }
+
+  handleKeyPress = (key) => {
+    let newValue = this.state.value;
+    if (key === '{enter}') {
+      if (this.props.onEnter) this.props.onEnter(newValue);
+      this.setState({ value: '' });
+    } else if (key === '{bksp}') {
+      newValue = newValue.slice(0, -1);
+      this.setState({ value: newValue });
+      if (this.props.onChange) this.props.onChange(newValue);
+    } else {
+      newValue += key;
+      this.setState({ value: newValue });
+      if (this.props.onChange) this.props.onChange(newValue);
+    }
+  };
+
+  render() {
+    const keys = [
+      ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '{bksp}'],
+      ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+      ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', '{enter}'],
+      ['z', 'x', 'c', 'v', 'b', 'n', 'm', '@', '.', '{enter}']
+    ];
+
+    return (
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#f0f0f0', padding: '10px', borderTop: '1px solid #ccc', zIndex: 1000 }}>
+        {keys.map((row, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'center', marginBottom: '5px' }}>
+            {row.map(key => (
+              <button
+                key={key}
+                onClick={() => this.handleKeyPress(key)}
+                style={{
+                  width: key === '{enter}' ? '80px' : (key === '{bksp}' ? '70px' : '50px'),
+                  height: '50px',
+                  margin: '2px',
+                  fontSize: '1.2rem',
+                  background: '#fff',
+                  border: '1px solid #aaa',
+                  borderRadius: '5px',
+                  cursor: 'pointer'
+                }}
+              >
+                {key === '{enter}' ? '⏎' : (key === '{bksp}' ? '⌫' : key)}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+}
+// ========== FIN COMPOSANT CLAVIER ==========
+
 class App extends Component {
   constructor(props) {
     super(props);
@@ -31,7 +93,6 @@ class App extends Component {
       backendURL: DEFAULT_BACKEND_URL,
       discoveredReaders: [],
       connectionStatus: "not_connected",
-      showKeyboard: false,
       reader: null,
       readerLabel: "",
       registrationCode: "",
@@ -67,23 +128,15 @@ class App extends Component {
       pendingPaymentIntentId: null,
       currentAuthorizedAmount: 0,
       pricePerMinute: 0,
+      showKeyboard: false,       // Pour le clavier virtuel
     };
-  
-    this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
-    
   }
 
-componentDidMount() {
-  this.initializeDefaultBackend();
-  this.loadProducts();
-}
-
-initializeDefaultBackend = () => {
-  this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
-};
-  
   componentDidMount() {
+    this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
     this.loadProducts();
+    // Connexion automatique au simulateur (optionnel)
+    this.autoConnectSimulator();
   }
 
   componentWillUnmount() {
@@ -100,6 +153,29 @@ initializeDefaultBackend = () => {
       this.setState({ products: data });
     } catch (err) {
       console.error("Erreur chargement produits:", err);
+    }
+  };
+
+  autoConnectSimulator = async () => {
+    let attempts = 0;
+    while (!this.terminal && attempts < 20) {
+      await new Promise(r => setTimeout(r, 500));
+      attempts++;
+    }
+    if (!this.terminal) {
+      console.error("Terminal non initialisé");
+      return;
+    }
+    try {
+      const simulatedResult = await this.terminal.discoverReaders({ simulated: true });
+      if (simulatedResult.discoveredReaders && simulatedResult.discoveredReaders.length > 0) {
+        await this.connectToReader(simulatedResult.discoveredReaders[0]);
+        console.log("Simulateur connecté automatiquement");
+      } else {
+        console.error("Aucun simulateur trouvé");
+      }
+    } catch (err) {
+      console.error("Erreur connexion auto au simulateur:", err);
     }
   };
 
@@ -310,7 +386,7 @@ initializeDefaultBackend = () => {
   };
 
   handleScreenTouch = () => {
-    const { showWelcomeScreen, sessionActive, backendURL, reader } = this.state;
+    const { showWelcomeScreen, sessionActive } = this.state;
     if (showWelcomeScreen && !sessionActive) {
       this.setState({ showWelcomeScreen: false, showProductSelection: true });
     }
@@ -341,17 +417,20 @@ initializeDefaultBackend = () => {
   handleEmailChange = (e) => {
     this.setState({ customerEmail: e.target.value });
   };
-handleEmailFocus = () => {
-  this.setState({ showKeyboard: true });
-};
 
-handleKeyboardChange = (value) => {
-  this.setState({ customerEmail: value });
-};
+  // Gestion du clavier virtuel
+  handleEmailFocus = () => {
+    this.setState({ showKeyboard: true });
+  };
 
-handleKeyboardEnter = (value) => {
-  this.setState({ showKeyboard: false });
-};
+  handleKeyboardChange = (value) => {
+    this.setState({ customerEmail: value });
+  };
+
+  handleKeyboardEnter = (value) => {
+    this.setState({ showKeyboard: false, customerEmail: value });
+  };
+
   handleTestCardChange = (e) => {
     const card = testCards.find(c => c.number === e.target.value);
     if (card) this.setState({ selectedTestCard: card });
@@ -519,6 +598,7 @@ handleKeyboardEnter = (value) => {
       pendingPaymentIntentId: null,
       currentAuthorizedAmount: 0,
       pricePerMinute: 0,
+      showKeyboard: false,
     });
     if (this.timerInterval) clearInterval(this.timerInterval);
   };
@@ -626,6 +706,7 @@ handleKeyboardEnter = (value) => {
       paymentInProgress,
       reader,
       discoveredReaders,
+      showKeyboard,
     } = this.state;
 
     // Écran d'accueil en veille
@@ -704,13 +785,13 @@ handleKeyboardEnter = (value) => {
           {(wantReceipt || wantReminder) && (
             <div style={{ marginBottom: '10px' }}>
               <label>Email :</label>
-              <input
-  type="email" 
-  value={customerEmail} 
-  onChange={this.handleEmailChange} 
-  onFocus={this.handleEmailFocus}
-  style={{ width: '100%', padding: '8px', marginTop: '5px' }} 
-/>
+              <input 
+                type="email" 
+                value={customerEmail} 
+                onChange={this.handleEmailChange} 
+                onFocus={this.handleEmailFocus}
+                style={{ width: '100%', padding: '8px', marginTop: '5px' }} 
+              />
             </div>
           )}
           <div style={{ marginTop: '20px' }}>
@@ -719,22 +800,25 @@ handleKeyboardEnter = (value) => {
             </button>
             <button onClick={this.cancelEmailForm} style={{ marginLeft: '10px', padding: '10px 20px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Annuler</button>
           </div>
-          {this.state.showKeyboard && (
-  <VirtualKeyboard 
-    onChange={this.handleKeyboardChange} 
-    onEnter={this.handleKeyboardEnter} 
-  />
-)}
+          {/* AFFICHAGE DU CLAVIER VIRTUEL */}
+          {showKeyboard && (
+            <SimpleKeyboard 
+              onChange={this.handleKeyboardChange} 
+              onEnter={this.handleKeyboardEnter} 
+            />
+          )}
         </div>
       );
     }
 
     // Connexion initiale
     if (!this.client) {
-  return <div>Connexion au service...</div>;
-}
+      return <div>Connexion au service...</div>;
+    }
     
-    if (!reader) return <Readers onClickDiscover={() => this.discoverReaders()} onClickCancelDiscover={() => this.cancelDiscoverReaders()} onSubmitRegister={this.registerAndConnectNewReader} readers={discoveredReaders} onConnectToReader={this.connectToReader} handleUseSimulator={this.connectToSimulator} listLocations={this.client.listLocations} />;
+    if (!reader) {
+      return <Readers onClickDiscover={() => this.discoverReaders()} onClickCancelDiscover={() => this.cancelDiscoverReaders()} onSubmitRegister={this.registerAndConnectNewReader} readers={discoveredReaders} onConnectToReader={this.connectToReader} handleUseSimulator={this.connectToSimulator} listLocations={this.client.listLocations} />;
+    }
 
     // Session active
     if (sessionActive) {
@@ -762,7 +846,8 @@ handleKeyboardEnter = (value) => {
     const { backendURL, reader } = this.state;
     return (
       <div className={css`display: flex; align-items: center; justify-content: center; min-height: 100vh;`}>
-     {/* {backendURL && reader && <ConnectionInfo backendURL={backendURL} reader={reader} onSetBackendURL={this.onSetBackendURL} onClickDisconnect={this.disconnectReader} />} */}
+        {/* ConnectionInfo commenté pour masquer l'info lecteur */}
+        {/* {backendURL && reader && <ConnectionInfo ... />} */}
         {this.renderForm()}
       </div>
     );
