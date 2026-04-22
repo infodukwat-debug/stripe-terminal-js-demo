@@ -822,7 +822,7 @@ if (showEmailForm && !emailSubmitted) {
         <p style={{ margin: '0 0 5px 0' }}><strong>ℹ️ Comment ça fonctionne :</strong></p>
         <p style={{ margin: '0 0 5px 0' }}>• Une pré-autorisation du montant correspondant à la durée choisie ×2 sera effectuée (aucun débit immédiat).</p>
         <p style={{ margin: '0 0 5px 0' }}>• Le temps supplémentaire est facturé <strong>0,50 € par minute</strong>.</p>
-        <p style={{ margin: '0' }}>• Vous ne payez que le <strong>temps réellement consommé</strong>.</p>
+        <p style={{ margin: '0' }}>• Vous ne payez que le <strong>temps choisi plus le temps supplémentaire si applicable</strong>.</p>
       </div>
       
       <div style={{ marginBottom: '10px' }}>
