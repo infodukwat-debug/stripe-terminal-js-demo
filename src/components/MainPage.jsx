@@ -795,73 +795,89 @@ class App extends Component {
     }
 
     // Formulaire email
-    if (showEmailForm && !emailSubmitted) {
-      return (
-        <div style={{ 
-          maxWidth: '500px', 
-          margin: '50px auto', 
-          padding: '20px', 
-          border: '1px solid #ccc', 
-          borderRadius: '10px', 
-          textAlign: 'center',
-          maxHeight: 'calc(100vh - 250px)',
-          overflowY: 'auto'
-        }}>
-          <h2>Options de la session</h2>
-          <p>Vous avez choisi : <strong>{selectedProduct?.name} ({this.renderPrice(selectedProduct)})</strong></p>
-          <div style={{ marginBottom: '10px' }}>
-            <label><input type="checkbox" checked={wantReceipt} onChange={this.handleWantReceiptChange} /> Recevoir le reçu par email</label>
-          </div>
-          {selectedProduct && parseInt(selectedProduct.name.split(' ')[0]) > 5 && (
-            <div style={{ marginBottom: '10px' }}>
-              <label><input type="checkbox" checked={wantReminder} onChange={this.handleWantReminderChange} /> Recevoir un rappel 5 min avant la fin</label>
-            </div>
-          )}
-          {(wantReceipt || wantReminder) && (
-            <div style={{ marginBottom: '10px' }}>
-              <label>Email :</label>
-              <input 
-                type="email" 
-                value={customerEmail} 
-                onChange={this.handleEmailChange} 
-                onFocus={this.handleEmailFocus}
-                style={{ width: '100%', padding: '8px', marginTop: '5px', fontSize: '1rem' }} 
-              />
-            </div>
-          )}
-          <div style={{ marginTop: '20px' }}>
-            <button onClick={this.submitEmailForm} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-              Démarrer la session
-            </button>
-            <button onClick={this.cancelEmailForm} style={{ marginLeft: '10px', padding: '10px 20px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Annuler</button>
-          </div>
-          {showKeyboard && (
-            <>
-              <div style={{
-                position: 'fixed',
-                bottom: '200px',
-                left: '10px',
-                right: '10px',
-                background: 'white',
-                padding: '10px',
-                border: '1px solid #ccc',
-                borderRadius: '5px',
-                textAlign: 'center',
-                fontSize: '1.2rem',
-                zIndex: 999,
-                boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
-              }}>
-                📧 {customerEmail || 'En attente de saisie...'}
-              </div>
-              <SimpleKeyboard 
-                onChange={this.handleKeyboardChange} 
-                onEnter={this.handleKeyboardEnter} 
-              />
-            </>
-          )}
+if (showEmailForm && !emailSubmitted) {
+  return (
+    <div style={{ 
+      maxWidth: '500px', 
+      margin: '50px auto', 
+      padding: '20px', 
+      border: '1px solid #ccc', 
+      borderRadius: '10px', 
+      textAlign: 'center',
+      maxHeight: 'calc(100vh - 250px)',
+      overflowY: 'auto'
+    }}>
+      <h2>Options de la session</h2>
+      <p>Vous avez choisi : <strong>{selectedProduct?.name} ({this.renderPrice(selectedProduct)})</strong></p>
+      
+      {/* Message d'information sur la pré-autorisation et la facturation */}
+      <div style={{ 
+        backgroundColor: '#e8f0fe', 
+        padding: '10px', 
+        borderRadius: '8px', 
+        marginBottom: '15px',
+        fontSize: '0.9rem',
+        textAlign: 'left'
+      }}>
+        <p style={{ margin: '0 0 5px 0' }}><strong>ℹ️ Comment ça fonctionne :</strong></p>
+        <p style={{ margin: '0 0 5px 0' }}>• Une pré-autorisation du montant correspondant à la durée choisie ×2 sera effectuée (aucun débit immédiat).</p>
+        <p style={{ margin: '0 0 5px 0' }}>• Le temps supplémentaire est facturé <strong>0,50 € par minute</strong>.</p>
+        <p style={{ margin: '0' }}>• Vous ne payez que le <strong>temps réellement consommé</strong>.</p>
+      </div>
+      
+      <div style={{ marginBottom: '10px' }}>
+        <label><input type="checkbox" checked={wantReceipt} onChange={this.handleWantReceiptChange} /> Recevoir le reçu par email</label>
+      </div>
+      {selectedProduct && parseInt(selectedProduct.name.split(' ')[0]) > 5 && (
+        <div style={{ marginBottom: '10px' }}>
+          <label><input type="checkbox" checked={wantReminder} onChange={this.handleWantReminderChange} /> Recevoir un rappel 5 min avant la fin</label>
         </div>
-      );
-    }
+      )}
+      {(wantReceipt || wantReminder) && (
+        <div style={{ marginBottom: '10px' }}>
+          <label>Email :</label>
+          <input 
+            type="email" 
+            value={customerEmail} 
+            onChange={this.handleEmailChange} 
+            onFocus={this.handleEmailFocus}
+            style={{ width: '100%', padding: '8px', marginTop: '5px', fontSize: '1rem' }} 
+          />
+        </div>
+      )}
+      <div style={{ marginTop: '20px' }}>
+        <button onClick={this.submitEmailForm} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          Démarrer la session
+        </button>
+        <button onClick={this.cancelEmailForm} style={{ marginLeft: '10px', padding: '10px 20px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Annuler</button>
+      </div>
+      {showKeyboard && (
+        <>
+          <div style={{
+            position: 'fixed',
+            bottom: '200px',
+            left: '10px',
+            right: '10px',
+            background: 'white',
+            padding: '10px',
+            border: '1px solid #ccc',
+            borderRadius: '5px',
+            textAlign: 'center',
+            fontSize: '1.2rem',
+            zIndex: 999,
+            boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+          }}>
+            📧 {customerEmail || 'En attente de saisie...'}
+          </div>
+          <SimpleKeyboard 
+            onChange={this.handleKeyboardChange} 
+            onEnter={this.handleKeyboardEnter} 
+          />
+        </>
+      )}
+    </div>
+  );
+}
 
     // Connexion initiale
     if (!this.client) {
