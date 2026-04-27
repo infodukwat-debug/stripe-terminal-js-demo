@@ -24,7 +24,7 @@ const testCards = [
   { name: "Refus - fonds insuffisants", number: "4000000000009995", type: "charge_declined_insufficient_funds" },
 ];
 
-// ========== COMPOSANT CLAVIER VIRTUEL COMPACT ==========
+// Composant clavier virtuel ultra-compact (sans dépendance externe)
 class SimpleKeyboard extends React.Component {
   constructor(props) {
     super(props);
@@ -62,26 +62,27 @@ class SimpleKeyboard extends React.Component {
         left: 0, 
         right: 0, 
         background: '#f0f0f0', 
-        padding: '5px', 
+        padding: '4px', 
         borderTop: '1px solid #ccc', 
         zIndex: 1000,
-        maxHeight: '200px',
-        overflowY: 'auto'
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center'
       }}>
         {keys.map((row, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'center', marginBottom: '4px' }}>
+          <div key={i} style={{ display: 'flex', justifyContent: 'center', marginBottom: '2px' }}>
             {row.map(key => (
               <button
                 key={key}
                 onClick={() => this.handleKeyPress(key)}
                 style={{
                   width: key === '{enter}' ? '60px' : (key === '{bksp}' ? '60px' : '40px'),
-                  height: '40px',
-                  margin: '2px',
-                  fontSize: '1rem',
+                  height: '36px',
+                  margin: '1px',
+                  fontSize: '0.9rem',
                   background: '#fff',
                   border: '1px solid #aaa',
-                  borderRadius: '5px',
+                  borderRadius: '4px',
                   cursor: 'pointer'
                 }}
               >
@@ -90,6 +91,22 @@ class SimpleKeyboard extends React.Component {
             ))}
           </div>
         ))}
+        <button 
+          onClick={() => this.props.onClose && this.props.onClose()}
+          style={{ 
+            width: '80px', 
+            height: '30px', 
+            margin: '4px 0',
+            background: '#dc3545', 
+            color: 'white', 
+            border: 'none', 
+            borderRadius: '4px',
+            fontSize: '0.8rem',
+            cursor: 'pointer'
+          }}
+        >
+          Fermer
+        </button>
       </div>
     );
   }
@@ -799,30 +816,30 @@ if (showEmailForm && !emailSubmitted) {
   return (
     <div style={{ 
       maxWidth: '500px', 
-      margin: '50px auto', 
-      padding: '20px', 
+      margin: '20px auto', 
+      padding: '15px', 
       border: '1px solid #ccc', 
       borderRadius: '10px', 
       textAlign: 'center',
-      maxHeight: 'calc(100vh - 250px)',
-      overflowY: 'auto'
+      maxHeight: 'calc(100vh - 200px)',
+      overflowY: 'auto',
+      paddingBottom: '20px'
     }}>
       <h2>Options de la session</h2>
       <p>Vous avez choisi : <strong>{selectedProduct?.name} ({this.renderPrice(selectedProduct)})</strong></p>
       
-      {/* Message d'information sur la pré-autorisation et la facturation */}
       <div style={{ 
         backgroundColor: '#e8f0fe', 
-        padding: '10px', 
+        padding: '8px', 
         borderRadius: '8px', 
         marginBottom: '15px',
-        fontSize: '0.9rem',
+        fontSize: '0.85rem',
         textAlign: 'left'
       }}>
         <p style={{ margin: '0 0 5px 0' }}><strong>ℹ️ Comment ça fonctionne :</strong></p>
-        <p style={{ margin: '0 0 5px 0' }}>• Une pré-autorisation du montant correspondant à la durée choisie ×2 sera effectuée (aucun débit immédiat).</p>
-        <p style={{ margin: '0 0 5px 0' }}>• Le temps supplémentaire est facturé <strong>0,50 € par minute</strong>.</p>
-        <p style={{ margin: '0' }}>• Vous ne payez que le <strong>temps choisi plus le temps supplémentaire si applicable</strong>.</p>
+        <p style={{ margin: '0 0 3px 0' }}>• Pré-autorisation (×2) – aucun débit immédiat</p>
+        <p style={{ margin: '0 0 3px 0' }}>• Temps supplémentaire : <strong>0,50 €/min</strong></p>
+        <p style={{ margin: '0' }}>• Vous ne payez que le temps réel</p>
       </div>
       
       <div style={{ marginBottom: '10px' }}>
@@ -841,39 +858,42 @@ if (showEmailForm && !emailSubmitted) {
             value={customerEmail} 
             onChange={this.handleEmailChange} 
             onFocus={this.handleEmailFocus}
-            style={{ width: '100%', padding: '8px', marginTop: '5px', fontSize: '1rem' }} 
+            style={{ width: '100%', padding: '6px', marginTop: '5px', fontSize: '0.9rem' }} 
           />
         </div>
       )}
       <div style={{ marginTop: '20px' }}>
-        <button onClick={this.submitEmailForm} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+        <button onClick={this.submitEmailForm} disabled={paymentInProgress} style={{ padding: '8px 16px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '0.9rem' }}>
           Démarrer la session
         </button>
-        <button onClick={this.cancelEmailForm} style={{ marginLeft: '10px', padding: '10px 20px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Annuler</button>
+        <button onClick={this.cancelEmailForm} style={{ marginLeft: '10px', padding: '8px 16px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '0.9rem' }}>Annuler</button>
       </div>
+      
+      {/* Affichage de l'email saisi (si clavier ouvert) */}
       {showKeyboard && (
-        <>
-          <div style={{
-            position: 'fixed',
-            bottom: '200px',
-            left: '10px',
-            right: '10px',
-            background: 'white',
-            padding: '10px',
-            border: '1px solid #ccc',
-            borderRadius: '5px',
-            textAlign: 'center',
-            fontSize: '1.2rem',
-            zIndex: 999,
-            boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
-          }}>
-            📧 {customerEmail || 'En attente de saisie...'}
-          </div>
-          <SimpleKeyboard 
-            onChange={this.handleKeyboardChange} 
-            onEnter={this.handleKeyboardEnter} 
-          />
-        </>
+        <div style={{
+          position: 'fixed',
+          bottom: '210px',
+          left: '10px',
+          right: '10px',
+          background: '#e8f0fe',
+          padding: '6px',
+          borderRadius: '5px',
+          textAlign: 'center',
+          fontSize: '0.9rem',
+          zIndex: 999
+        }}>
+          📧 {customerEmail || 'Saisissez votre email...'}
+        </div>
+      )}
+      
+      {/* Le clavier s'affiche en bas */}
+      {showKeyboard && (
+        <SimpleKeyboard 
+          onChange={this.handleKeyboardChange} 
+          onEnter={this.handleKeyboardEnter}
+          onClose={() => this.setState({ showKeyboard: false })}
+        />
       )}
     </div>
   );
