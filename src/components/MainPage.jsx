@@ -409,7 +409,7 @@ startPaymentAuthorization = async () => {
 
     // === NOUVEAU : ouverture immédiate de la serrure (appel local) ===
     try {
-      await fetch('http://localhost:5000/ouvrir', { method: 'POST' });
+      await fetch('http://192.168.1.65:5000/ouvrir', { method: 'POST' });
       console.log("✅ Serrure ouverte");
     } catch (err) {
       console.error("❌ Erreur ouverture serrure :", err);
