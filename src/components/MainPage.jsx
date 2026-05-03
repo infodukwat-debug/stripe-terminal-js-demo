@@ -183,28 +183,29 @@ class App extends Component {
     }
   };
 
-  autoConnectSimulator = async () => {
-    let attempts = 0;
-    while (!this.terminal && attempts < 20) {
-      await new Promise(r => setTimeout(r, 500));
-      attempts++;
+autoConnectSimulator = async () => {
+  let attempts = 0;
+  const maxAttempts = 30; // 15 secondes max
+  while (!this.terminal && attempts < maxAttempts) {
+    await new Promise(r => setTimeout(r, 500));
+    attempts++;
+  }
+  if (!this.terminal) {
+    console.error("❌ Terminal non initialisé après 15s");
+    return;
+  }
+  try {
+    const simulatedResult = await this.terminal.discoverReaders({ simulated: true });
+    if (simulatedResult.discoveredReaders && simulatedResult.discoveredReaders.length > 0) {
+      await this.connectToReader(simulatedResult.discoveredReaders[0]);
+      console.log("✅ Simulateur connecté automatiquement");
+    } else {
+      console.error("❌ Aucun simulateur trouvé");
     }
-    if (!this.terminal) {
-      console.error("Terminal non initialisé");
-      return;
-    }
-    try {
-      const simulatedResult = await this.terminal.discoverReaders({ simulated: true });
-      if (simulatedResult.discoveredReaders && simulatedResult.discoveredReaders.length > 0) {
-        await this.connectToReader(simulatedResult.discoveredReaders[0]);
-        console.log("Simulateur connecté automatiquement");
-      } else {
-        console.error("Aucun simulateur trouvé");
-      }
-    } catch (err) {
-      console.error("Erreur connexion auto au simulateur:", err);
-    }
-  };
+  } catch (err) {
+    console.error("❌ Erreur connexion auto au simulateur:", err);
+  }
+};
 
   isWorkflowDisabled = () => this.state.cancelablePayment || this.state.workFlowInProgress;
 
