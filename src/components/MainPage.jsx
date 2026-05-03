@@ -349,68 +349,78 @@ class App extends Component {
     this.startPaymentAuthorization();
   };
 
-  startPaymentAuthorization = async () => {
-    const { selectedProduct, wantReceipt, customerEmail, currency, selectedTestCard } = this.state;
-    if (!selectedProduct) return;
+startPaymentAuthorization = async () => {
+  const { selectedProduct, wantReceipt, customerEmail, currency, selectedTestCard } = this.state;
+  if (!selectedProduct) return;
 
-    const chosenMinutes = parseInt(selectedProduct.name.split(' ')[0]);
-    const basePrice = selectedProduct.price;
-    const authAmount = this.computeAuthorizationAmount(basePrice, chosenMinutes);
-    const pricePerMinute = basePrice / chosenMinutes;
+  const chosenMinutes = parseInt(selectedProduct.name.split(' ')[0]);
+  const basePrice = selectedProduct.price;
+  const authAmount = this.computeAuthorizationAmount(basePrice, chosenMinutes);
+  const pricePerMinute = basePrice / chosenMinutes;
 
-    this.setState({ paymentInProgress: true });
+  this.setState({ paymentInProgress: true });
 
-    try {
-      const createIntentResponse = await this.client.createPaymentIntent({
-        amount: authAmount,
-        currency: currency,
-        description: `Pré-autorisation Qnook - ${selectedProduct.name}`,
-        paymentMethodTypes: ["card_present"],
-        email: wantReceipt ? customerEmail : undefined
-      });
-      const clientSecret = createIntentResponse.client_secret;
+  try {
+    const createIntentResponse = await this.client.createPaymentIntent({
+      amount: authAmount,
+      currency: currency,
+      description: `Pré-autorisation Qnook - ${selectedProduct.name}`,
+      paymentMethodTypes: ["card_present"],
+      email: wantReceipt ? customerEmail : undefined
+    });
+    const clientSecret = createIntentResponse.client_secret;
 
-      const simulatorConfiguration = {
-        testPaymentMethod: selectedTestCard.type,
-        testCardNumber: selectedTestCard.number,
-      };
-      if (this.state.simulateOnReaderTip) simulatorConfiguration.tipAmount = Number(this.state.tipAmount);
-      this.terminal.setSimulatorConfiguration(simulatorConfiguration);
+    const simulatorConfiguration = {
+      testPaymentMethod: selectedTestCard.type,
+      testCardNumber: selectedTestCard.number,
+    };
+    if (this.state.simulateOnReaderTip) simulatorConfiguration.tipAmount = Number(this.state.tipAmount);
+    this.terminal.setSimulatorConfiguration(simulatorConfiguration);
 
-      const collectResult = await this.terminal.collectPaymentMethod(clientSecret);
-      if (collectResult.error) throw new Error(collectResult.error.message);
+    const collectResult = await this.terminal.collectPaymentMethod(clientSecret);
+    if (collectResult.error) throw new Error(collectResult.error.message);
 
-      const confirmResult = await this.terminal.processPayment(collectResult.paymentIntent);
-      if (confirmResult.error) {
-        if (confirmResult.error.code === 'insufficient_funds' || confirmResult.error.message.includes('insufficient_funds')) {
-          this.handleInsufficientFunds(chosenMinutes, selectedProduct);
-        } else {
-          alert(`Erreur de paiement : ${confirmResult.error.message}`);
-        }
-        return;
+    const confirmResult = await this.terminal.processPayment(collectResult.paymentIntent);
+    if (confirmResult.error) {
+      if (confirmResult.error.code === 'insufficient_funds' || confirmResult.error.message.includes('insufficient_funds')) {
+        this.handleInsufficientFunds(chosenMinutes, selectedProduct);
+      } else {
+        alert(`Erreur de paiement : ${confirmResult.error.message}`);
       }
-
-      this.pendingPaymentIntentId = confirmResult.paymentIntent.id;
-      this.currentAuthorizedAmount = authAmount;
-      this.pricePerMinute = pricePerMinute;
-
-      const startTime = Date.now();
-      this.setState({
-        sessionStartTime: startTime,
-        sessionActive: true,
-        showEmailForm: false,
-        paymentInProgress: false,
-        showProductSelection: false,
-        showWelcomeScreen: false,
-      });
-      if (this.timerInterval) clearInterval(this.timerInterval);
-      this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
-    } catch (err) {
-      console.error("Erreur startPaymentAuthorization:", err);
-      alert(`Erreur : ${err.message}`);
-      this.setState({ paymentInProgress: false });
+      return;
     }
-  };
+
+    this.pendingPaymentIntentId = confirmResult.paymentIntent.id;
+    this.currentAuthorizedAmount = authAmount;
+    this.pricePerMinute = pricePerMinute;
+
+    const startTime = Date.now();
+    this.setState({
+      sessionStartTime: startTime,
+      sessionActive: true,
+      showEmailForm: false,
+      paymentInProgress: false,
+      showProductSelection: false,
+      showWelcomeScreen: false,
+    });
+    if (this.timerInterval) clearInterval(this.timerInterval);
+    this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
+
+    // === NOUVEAU : ouverture immédiate de la serrure (appel local) ===
+    try {
+      await fetch('http://localhost:5000/ouvrir', { method: 'POST' });
+      console.log("✅ Serrure ouverte");
+    } catch (err) {
+      console.error("❌ Erreur ouverture serrure :", err);
+    }
+    // =============================================================
+
+  } catch (err) {
+    console.error("Erreur startPaymentAuthorization:", err);
+    alert(`Erreur : ${err.message}`);
+    this.setState({ paymentInProgress: false });
+  }
+};
 
   handleScreenTouch = () => {
     const { showWelcomeScreen, sessionActive } = this.state;
