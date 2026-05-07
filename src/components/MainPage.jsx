@@ -24,7 +24,7 @@ const testCards = [
   { name: "Refus - fonds insuffisants", number: "4000000000009995", type: "charge_declined_insufficient_funds" },
 ];
 
-// Composant clavier virtuel ultra-compact (sans dépendance externe)
+// Composant clavier virtuel ultra-compact (identique)
 class SimpleKeyboard extends React.Component {
   constructor(props) {
     super(props);
@@ -157,16 +157,19 @@ class App extends Component {
       currentAuthorizedAmount: 0,
       pricePerMinute: 0,
       showKeyboard: false,
-      inactivityTimer: null, // Timer pour retour à l'accueil
+      // Gestion inactivité avec dialogue
+      inactivityTimer: null,
+      showInactivityDialog: false,
     };
     this.INACTIVITY_DELAY = 30000; // 30 secondes
+    this.INACTIVITY_HALF = 15000;  // 15 secondes
   }
 
   componentDidMount() {
     this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
     this.loadProducts();
     this.autoConnectSimulator();
-    this.resetInactivityTimer(); // Démarrer le timer d'inactivité
+    this.startInactivityTimer(); // Démarrer la surveillance
   }
 
   componentWillUnmount() {
@@ -174,35 +177,69 @@ class App extends Component {
     if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
   }
 
-  // Gestion du timer d'inactivité
-  resetInactivityTimer = () => {
-    if (this.state.sessionActive) return; // Ne pas reset le timer pendant une session active
+  // ---------- Gestion de l'inactivité ----------
+  startInactivityTimer = () => {
+    if (this.state.sessionActive) return;
     if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
-    const timer = setTimeout(() => {
-      // Retour à l'écran d'accueil
-      console.log("⏰ Inactivité détectée, retour à l'accueil");
-      this.setState({
-        showProductSelection: false,
-        showWelcomeScreen: true,
-        showEmailForm: false,
-        selectedProduct: null,
-        customerEmail: "",
-        wantReceipt: false,
-        wantReminder: false,
-        emailSubmitted: false,
-        showKeyboard: false,
-      });
+    
+    // Timer pour afficher la boîte de dialogue à mi‑parcours
+    const halfTimer = setTimeout(() => {
+      if (!this.state.sessionActive && !this.state.showInactivityDialog) {
+        this.setState({ showInactivityDialog: true });
+        // On laisse le timer principal continuer
+      }
+    }, this.INACTIVITY_HALF);
+    
+    // Timer principal pour retour à l'accueil
+    const mainTimer = setTimeout(() => {
+      if (this.state.showInactivityDialog) {
+        // Si la boîte est encore ouverte, on la ferme et on revient à l'accueil
+        this.setState({ showInactivityDialog: false });
+      }
+      this.returnToWelcome();
     }, this.INACTIVITY_DELAY);
-    this.setState({ inactivityTimer: timer });
+    
+    this.setState({ inactivityTimer: { halfTimer, mainTimer } });
   };
 
-  // Annuler le timer (ex: quand une session démarre)
   cancelInactivityTimer = () => {
     if (this.state.inactivityTimer) {
-      clearTimeout(this.state.inactivityTimer);
-      this.setState({ inactivityTimer: null });
+      clearTimeout(this.state.inactivityTimer.halfTimer);
+      clearTimeout(this.state.inactivityTimer.mainTimer);
+      this.setState({ inactivityTimer: null, showInactivityDialog: false });
     }
   };
+
+  resetInactivityTimer = () => {
+    this.cancelInactivityTimer();
+    this.startInactivityTimer();
+  };
+
+  returnToWelcome = () => {
+    this.cancelInactivityTimer();
+    this.setState({
+      showProductSelection: false,
+      showWelcomeScreen: true,
+      showEmailForm: false,
+      selectedProduct: null,
+      customerEmail: "",
+      wantReceipt: false,
+      wantReminder: false,
+      emailSubmitted: false,
+      showKeyboard: false,
+      showInactivityDialog: false,
+    });
+  };
+
+  handleInactivityContinue = () => {
+    this.setState({ showInactivityDialog: false });
+    this.resetInactivityTimer();
+  };
+
+  handleInactivityExit = () => {
+    this.returnToWelcome();
+  };
+  // ---------------------------------------
 
   loadProducts = async () => {
     const { backendURL } = this.state;
@@ -219,7 +256,7 @@ class App extends Component {
 
   autoConnectSimulator = async () => {
     let attempts = 0;
-    const maxAttempts = 30; // 15 secondes max
+    const maxAttempts = 30;
     while (!this.terminal && attempts < maxAttempts) {
       await new Promise(r => setTimeout(r, 500));
       attempts++;
@@ -335,7 +372,7 @@ class App extends Component {
     await this.terminal.disconnectReader();
     this.setState({ reader: null, sessionActive: false, sessionStartTime: null, pendingPaymentIntentId: null });
     if (this.timerInterval) clearInterval(this.timerInterval);
-    this.resetInactivityTimer(); // Relancer le timer après déconnexion
+    this.startInactivityTimer(); // Réactiver la surveillance
   };
 
   registerAndConnectNewReader = async (label, registrationCode, location) => {
@@ -442,15 +479,15 @@ class App extends Component {
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
 
-      // Annuler le timer d'inactivité (session active)
+      // Désactiver le timer d'inactivité car session active
       this.cancelInactivityTimer();
 
-      // === OUVERTURE SERRURE ===
+      // Ouverture serrure
       try {
         await fetch('http://localhost:5000/ouvrir', { method: 'POST' });
         console.log("✅ Serrure ouverte");
       } catch (err) {
-        console.error("❌ Erreur ouverture serrure :", err);
+        console.error("❌ Erreur ouverture serrure:", err);
       }
 
     } catch (err) {
@@ -464,7 +501,7 @@ class App extends Component {
     const { showWelcomeScreen, sessionActive } = this.state;
     if (showWelcomeScreen && !sessionActive) {
       this.setState({ showWelcomeScreen: false, showProductSelection: true });
-      this.resetInactivityTimer(); // Réinitialiser le timer sur interaction
+      this.resetInactivityTimer(); // réinitialise les timers d'inactivité
     }
   };
 
@@ -697,10 +734,10 @@ class App extends Component {
       currentAuthorizedAmount: 0,
       pricePerMinute: 0,
       showKeyboard: false,
+      showInactivityDialog: false,
     });
     if (this.timerInterval) clearInterval(this.timerInterval);
-    // Réactiver le timer d'inactivité
-    this.resetInactivityTimer();
+    this.startInactivityTimer(); // Réactiver la surveillance
   };
 
   cancelSession = () => {
@@ -808,6 +845,7 @@ class App extends Component {
       reader,
       discoveredReaders,
       showKeyboard,
+      showInactivityDialog,
     } = this.state;
 
     if (showWelcomeScreen) {
@@ -974,6 +1012,44 @@ class App extends Component {
             {paymentInProgress ? "Paiement en cours..." : "Terminer et payer"}
           </button>
           <button onClick={this.cancelSession} style={{ marginLeft: '10px', padding: '10px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Annuler</button>
+        </div>
+      );
+    }
+
+    // Boîte de dialogue d'inactivité (superposée)
+    if (showInactivityDialog) {
+      return (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 2000,
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '30px',
+            borderRadius: '15px',
+            textAlign: 'center',
+            maxWidth: '400px',
+            margin: '20px',
+          }}>
+            <h3>⏳ Souhaitez-vous continuer votre sélection ?</h3>
+            <p>Vous n'avez touché l'écran depuis 15 secondes. Votre session sera réinitialisée dans 15 secondes.</p>
+            <div style={{ marginTop: '30px' }}>
+              <button onClick={this.handleInactivityContinue} style={{ padding: '10px 20px', marginRight: '15px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+                Oui, continuer
+              </button>
+              <button onClick={this.handleInactivityExit} style={{ padding: '10px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+                Non, revenir à l'accueil
+              </button>
+            </div>
+          </div>
         </div>
       );
     }
