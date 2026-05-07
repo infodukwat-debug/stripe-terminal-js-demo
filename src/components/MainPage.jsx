@@ -111,7 +111,43 @@ class SimpleKeyboard extends React.Component {
     );
   }
 }
-// ========== FIN COMPOSANT CLAVIER ==========
+
+// ========== MODALE D'INACTIVITÉ ==========
+const InactivityModal = ({ onContinue, onQuit }) => (
+  <div style={{
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2000
+  }}>
+    <div style={{
+      backgroundColor: 'white',
+      padding: '30px',
+      borderRadius: '10px',
+      textAlign: 'center',
+      maxWidth: '400px',
+      boxShadow: '0 0 20px rgba(0,0,0,0.3)'
+    }}>
+      <h3>⚠️ Inactivité détectée</h3>
+      <p>Souhaitez-vous continuer votre sélection ?</p>
+      <div style={{ marginTop: '20px' }}>
+        <button onClick={onContinue} style={{ marginRight: '15px', padding: '8px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          Oui, continuer
+        </button>
+        <button onClick={onQuit} style={{ padding: '8px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          Non, quitter
+        </button>
+      </div>
+    </div>
+  </div>
+);
+// ========== FIN MODALE ==========
 
 class App extends Component {
   constructor(props) {
@@ -157,94 +193,84 @@ class App extends Component {
       currentAuthorizedAmount: 0,
       pricePerMinute: 0,
       showKeyboard: false,
-      inactivityTimer: null,
-      inactivityDialogOpen: false,   // Évite multiples dialogues
+      // Gestion inactivité
+      showInactivityModal: false,
+      inactivityTimer1: null,
+      inactivityTimer2: null,
     };
-    this.INACTIVITY_DELAY = 30000;   // 30 secondes
-    this.INACTIVITY_WARNING_DELAY = 15000; // 15 secondes avant boîte
+    this.INACTIVITY_DELAY_MODAL = 15000;  // 15 sec
+    this.INACTIVITY_DELAY_QUIT = 30000;   // 30 sec
   }
 
   componentDidMount() {
     this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
     this.loadProducts();
     this.autoConnectSimulator();
-    this.resetInactivityTimer();
+    this.resetInactivityTimers();
   }
 
   componentWillUnmount() {
     if (this.timerInterval) clearInterval(this.timerInterval);
-    if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
+    this.clearInactivityTimers();
   }
 
-  resetInactivityTimer = () => {
-    if (this.state.sessionActive) return;
-    if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
+  // ========== GESTION INACTIVITÉ ==========
+  resetInactivityTimers = () => {
+    if (this.state.sessionActive || this.state.paymentInProgress) return;
+    this.clearInactivityTimers();
     
-    const timer = setTimeout(() => {
-      // Première phase : afficher la boîte de dialogue (si pas déjà ouverte)
-      if (!this.state.inactivityDialogOpen) {
-        this.setState({ inactivityDialogOpen: true });
-        const confirm = window.confirm("Souhaitez-vous continuer votre sélection ? (OK = continuer, Annuler = revenir à l'accueil)");
-        if (confirm) {
-          // L'utilisateur souhaite continuer : on reset le timer sans fermer la boîte (on referme juste)
-          this.setState({ inactivityDialogOpen: false });
-          this.resetInactivityTimer();
-        } else {
-          // L'utilisateur annule : retour immédiat à l'accueil
-          this.setState({
-            showProductSelection: false,
-            showWelcomeScreen: true,
-            showEmailForm: false,
-            selectedProduct: null,
-            customerEmail: "",
-            wantReceipt: false,
-            wantReminder: false,
-            emailSubmitted: false,
-            showKeyboard: false,
-            inactivityDialogOpen: false,
-          });
-          if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
-          this.resetInactivityTimer(); // Relance le timer après retour à l'accueil
-          return;
-        }
-      } else {
-        // Deuxième phase : on attend encore 15 secondes puis retour sans option
-        const finalTimer = setTimeout(() => {
-          this.setState({
-            showProductSelection: false,
-            showWelcomeScreen: true,
-            showEmailForm: false,
-            selectedProduct: null,
-            customerEmail: "",
-            wantReceipt: false,
-            wantReminder: false,
-            emailSubmitted: false,
-            showKeyboard: false,
-            inactivityDialogOpen: false,
-          });
-          if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
-          this.resetInactivityTimer();
-        }, this.INACTIVITY_WARNING_DELAY);
-        this.setState({ inactivityTimer: finalTimer });
-        return;
+    // Timer pour afficher la modale (15s)
+    const timer1 = setTimeout(() => {
+      if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showInactivityModal) {
+        this.setState({ showInactivityModal: true });
+        // Timer pour quitter après 30s total (dans 15s)
+        const timer2 = setTimeout(() => {
+          if (!this.state.sessionActive && !this.state.paymentInProgress) {
+            this.quitToWelcome();
+          }
+        }, 15000);
+        this.setState({ inactivityTimer2: timer2 });
       }
-    }, this.INACTIVITY_DELAY);
-    this.setState({ inactivityTimer: timer });
+    }, 15000);
+    this.setState({ inactivityTimer1: timer1 });
   };
 
-  cancelInactivityTimer = () => {
-    if (this.state.inactivityTimer) {
-      clearTimeout(this.state.inactivityTimer);
-      this.setState({ inactivityTimer: null, inactivityDialogOpen: false });
+  clearInactivityTimers = () => {
+    if (this.state.inactivityTimer1) clearTimeout(this.state.inactivityTimer1);
+    if (this.state.inactivityTimer2) clearTimeout(this.state.inactivityTimer2);
+    this.setState({ showInactivityModal: false, inactivityTimer1: null, inactivityTimer2: null });
+  };
+
+  quitToWelcome = () => {
+    this.clearInactivityTimers();
+    this.setState({
+      showProductSelection: false,
+      showWelcomeScreen: true,
+      showEmailForm: false,
+      selectedProduct: null,
+      customerEmail: "",
+      wantReceipt: false,
+      wantReminder: false,
+      emailSubmitted: false,
+      showKeyboard: false,
+    });
+  };
+
+  handleUserInteraction = () => {
+    if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showInactivityModal) {
+      this.resetInactivityTimers();
     }
   };
 
-  // Les autres méthodes (loadProducts, autoConnectSimulator, etc.) restent strictement identiques à votre version existante.
-  // Pour éviter des erreurs de copie, je les garde telles quelles. Seules les méthodes modifiées sont ci-dessus.
-  // Le code complet ci-dessous reprend l'ensemble de votre fichier, mais avec les modifications d'inactivité.
-  // Je fournis le fichier complet pour éviter les incohérences.
+  handleContinueSession = () => {
+    this.clearInactivityTimers();
+    this.resetInactivityTimers();
+  };
 
-  // ----- (Toutes les méthodes non modifiées sont présentes ci-dessous. Elles sont identiques à votre dernière version) -----
+  handleQuitSession = () => {
+    this.quitToWelcome();
+  };
+  // ========== FIN GESTION INACTIVITÉ ==========
 
   loadProducts = async () => {
     const { backendURL } = this.state;
@@ -261,7 +287,7 @@ class App extends Component {
 
   autoConnectSimulator = async () => {
     let attempts = 0;
-    const maxAttempts = 30;
+    const maxAttempts = 30; // 15 secondes max
     while (!this.terminal && attempts < maxAttempts) {
       await new Promise(r => setTimeout(r, 500));
       attempts++;
@@ -377,7 +403,7 @@ class App extends Component {
     await this.terminal.disconnectReader();
     this.setState({ reader: null, sessionActive: false, sessionStartTime: null, pendingPaymentIntentId: null });
     if (this.timerInterval) clearInterval(this.timerInterval);
-    this.resetInactivityTimer();
+    this.resetInactivityTimers();
   };
 
   registerAndConnectNewReader = async (label, registrationCode, location) => {
@@ -437,6 +463,7 @@ class App extends Component {
     const pricePerMinute = basePrice / chosenMinutes;
 
     this.setState({ paymentInProgress: true });
+    this.clearInactivityTimers();
 
     try {
       const createIntentResponse = await this.client.createPaymentIntent({
@@ -484,8 +511,7 @@ class App extends Component {
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
 
-      this.cancelInactivityTimer();
-
+      // Ouverture immédiate de la serrure
       try {
         await fetch('http://localhost:5000/ouvrir', { method: 'POST' });
         console.log("✅ Serrure ouverte");
@@ -501,15 +527,15 @@ class App extends Component {
   };
 
   handleScreenTouch = () => {
+    this.handleUserInteraction();
     const { showWelcomeScreen, sessionActive } = this.state;
     if (showWelcomeScreen && !sessionActive) {
       this.setState({ showWelcomeScreen: false, showProductSelection: true });
-      this.resetInactivityTimer();
     }
   };
 
   selectProduct = (product) => {
-    this.resetInactivityTimer();
+    this.handleUserInteraction();
     this.setState({
       selectedProduct: product,
       chargeAmount: product.price,
@@ -524,43 +550,43 @@ class App extends Component {
   };
 
   handleWantReceiptChange = (e) => {
-    this.resetInactivityTimer();
+    this.handleUserInteraction();
     this.setState({ wantReceipt: e.target.checked });
   };
 
   handleWantReminderChange = (e) => {
-    this.resetInactivityTimer();
+    this.handleUserInteraction();
     this.setState({ wantReminder: e.target.checked });
   };
 
   handleEmailChange = (e) => {
-    this.resetInactivityTimer();
+    this.handleUserInteraction();
     this.setState({ customerEmail: e.target.value });
   };
 
   handleEmailFocus = () => {
-    this.resetInactivityTimer();
+    this.handleUserInteraction();
     this.setState({ showKeyboard: true });
   };
 
   handleKeyboardChange = (value) => {
-    this.resetInactivityTimer();
+    this.handleUserInteraction();
     this.setState({ customerEmail: value });
   };
 
   handleKeyboardEnter = (value) => {
-    this.resetInactivityTimer();
+    this.handleUserInteraction();
     this.setState({ showKeyboard: false, customerEmail: value });
   };
 
   handleTestCardChange = (e) => {
-    this.resetInactivityTimer();
+    this.handleUserInteraction();
     const card = testCards.find(c => c.number === e.target.value);
     if (card) this.setState({ selectedTestCard: card });
   };
 
   submitEmailForm = () => {
-    this.resetInactivityTimer();
+    this.handleUserInteraction();
     const { wantReceipt, wantReminder, customerEmail } = this.state;
     if ((wantReceipt || wantReminder) && !customerEmail) {
       alert("Veuillez saisir une adresse email.");
@@ -571,7 +597,7 @@ class App extends Component {
   };
 
   cancelEmailForm = () => {
-    this.resetInactivityTimer();
+    this.handleUserInteraction();
     this.setState({
       showProductSelection: true,
       selectedProduct: null,
@@ -591,6 +617,7 @@ class App extends Component {
       this.sendReminder();
       this.setState({ reminderSent: true });
     }
+
     this.forceUpdate();
   };
 
@@ -739,7 +766,7 @@ class App extends Component {
       showKeyboard: false,
     });
     if (this.timerInterval) clearInterval(this.timerInterval);
-    this.resetInactivityTimer();
+    this.resetInactivityTimers();
   };
 
   cancelSession = () => {
@@ -791,7 +818,7 @@ class App extends Component {
     this.setState({ backendURL: url }, () => {
       this.loadProducts();
     });
-    this.resetInactivityTimer();
+    this.resetInactivityTimers();
   };
 
   updateChargeAmount = amount => this.setState({ chargeAmount: parseInt(amount, 10) });
@@ -847,8 +874,15 @@ class App extends Component {
       reader,
       discoveredReaders,
       showKeyboard,
+      showInactivityModal,
     } = this.state;
 
+    // Affichage de la modale d'inactivité (priorité absolue)
+    if (showInactivityModal) {
+      return <InactivityModal onContinue={this.handleContinueSession} onQuit={this.handleQuitSession} />;
+    }
+
+    // Écran d'accueil en veille
     if (showWelcomeScreen) {
       return (
         <div
@@ -874,6 +908,7 @@ class App extends Component {
       );
     }
 
+    // Sélection des produits
     if (showProductSelection && backendURL && reader && !sessionActive && !showEmailForm) {
       if (products.length === 0) return <div>Chargement des produits...</div>;
       return (
@@ -906,6 +941,7 @@ class App extends Component {
       );
     }
 
+    // Formulaire email
     if (showEmailForm && !emailSubmitted) {
       return (
         <div style={{ 
@@ -964,28 +1000,27 @@ class App extends Component {
           </div>
           
           {showKeyboard && (
-            <div style={{
-              position: 'fixed',
-              bottom: '210px',
-              left: '10px',
-              right: '10px',
-              background: '#e8f0fe',
-              padding: '6px',
-              borderRadius: '5px',
-              textAlign: 'center',
-              fontSize: '0.9rem',
-              zIndex: 999
-            }}>
-              📧 {customerEmail || 'Saisissez votre email...'}
-            </div>
-          )}
-          
-          {showKeyboard && (
-            <SimpleKeyboard 
-              onChange={this.handleKeyboardChange} 
-              onEnter={this.handleKeyboardEnter}
-              onClose={() => this.setState({ showKeyboard: false })}
-            />
+            <>
+              <div style={{
+                position: 'fixed',
+                bottom: '210px',
+                left: '10px',
+                right: '10px',
+                background: '#e8f0fe',
+                padding: '6px',
+                borderRadius: '5px',
+                textAlign: 'center',
+                fontSize: '0.9rem',
+                zIndex: 999
+              }}>
+                📧 {customerEmail || 'Saisissez votre email...'}
+              </div>
+              <SimpleKeyboard 
+                onChange={this.handleKeyboardChange} 
+                onEnter={this.handleKeyboardEnter}
+                onClose={() => this.setState({ showKeyboard: false })}
+              />
+            </>
           )}
         </div>
       );
