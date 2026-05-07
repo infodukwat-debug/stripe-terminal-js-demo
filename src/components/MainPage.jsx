@@ -111,6 +111,7 @@ class SimpleKeyboard extends React.Component {
     );
   }
 }
+// ========== FIN COMPOSANT CLAVIER ==========
 
 class App extends Component {
   constructor(props) {
@@ -156,96 +157,95 @@ class App extends Component {
       currentAuthorizedAmount: 0,
       pricePerMinute: 0,
       showKeyboard: false,
-      inactivityTimer: null,       // Timer général (30s)
-      inactivityDialogTimer: null, // Timer pour afficher la boîte (15s)
-      inactivityDialogShown: false,
+      inactivityTimer: null,
+      inactivityDialogOpen: false,   // Évite multiples dialogues
     };
-    this.INACTIVITY_DELAY = 30000;      // 30 secondes -> retour accueil
-    this.INACTIVITY_DIALOG_DELAY = 15000; // 15 secondes -> popup
+    this.INACTIVITY_DELAY = 30000;   // 30 secondes
+    this.INACTIVITY_WARNING_DELAY = 15000; // 15 secondes avant boîte
   }
 
   componentDidMount() {
     this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
     this.loadProducts();
     this.autoConnectSimulator();
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
   }
 
   componentWillUnmount() {
     if (this.timerInterval) clearInterval(this.timerInterval);
-    this.clearInactivityTimers();
+    if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
   }
 
-  // Nettoyage complet des timers d'inactivité
-  clearInactivityTimers = () => {
+  resetInactivityTimer = () => {
+    if (this.state.sessionActive) return;
     if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
-    if (this.state.inactivityDialogTimer) clearTimeout(this.state.inactivityDialogTimer);
-  };
-
-  // Réinitialise les deux timers (appelé à chaque interaction)
-  resetInactivityTimers = () => {
-    if (this.state.sessionActive) return; // Pas de timer pendant session
-    this.clearInactivityTimers();
     
-    // Timer pour afficher la boîte de dialogue (à 15s)
-    const dialogTimer = setTimeout(() => {
-      if (!this.state.sessionActive && !this.state.inactivityDialogShown) {
-        this.setState({ inactivityDialogShown: true });
-        const userWantsToContinue = window.confirm("Souhaitez-vous continuer votre sélection ?");
-        if (userWantsToContinue) {
-          // Relancer les timers
-          this.setState({ inactivityDialogShown: false });
-          this.resetInactivityTimers();
+    const timer = setTimeout(() => {
+      // Première phase : afficher la boîte de dialogue (si pas déjà ouverte)
+      if (!this.state.inactivityDialogOpen) {
+        this.setState({ inactivityDialogOpen: true });
+        const confirm = window.confirm("Souhaitez-vous continuer votre sélection ? (OK = continuer, Annuler = revenir à l'accueil)");
+        if (confirm) {
+          // L'utilisateur souhaite continuer : on reset le timer sans fermer la boîte (on referme juste)
+          this.setState({ inactivityDialogOpen: false });
+          this.resetInactivityTimer();
         } else {
-          // Retour immédiat à l'accueil
-          this.returnToHome();
+          // L'utilisateur annule : retour immédiat à l'accueil
+          this.setState({
+            showProductSelection: false,
+            showWelcomeScreen: true,
+            showEmailForm: false,
+            selectedProduct: null,
+            customerEmail: "",
+            wantReceipt: false,
+            wantReminder: false,
+            emailSubmitted: false,
+            showKeyboard: false,
+            inactivityDialogOpen: false,
+          });
+          if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
+          this.resetInactivityTimer(); // Relance le timer après retour à l'accueil
+          return;
         }
-      }
-    }, this.INACTIVITY_DIALOG_DELAY);
-    
-    // Timer pour retour automatique (30s)
-    const mainTimer = setTimeout(() => {
-      if (!this.state.sessionActive) {
-        this.returnToHome();
+      } else {
+        // Deuxième phase : on attend encore 15 secondes puis retour sans option
+        const finalTimer = setTimeout(() => {
+          this.setState({
+            showProductSelection: false,
+            showWelcomeScreen: true,
+            showEmailForm: false,
+            selectedProduct: null,
+            customerEmail: "",
+            wantReceipt: false,
+            wantReminder: false,
+            emailSubmitted: false,
+            showKeyboard: false,
+            inactivityDialogOpen: false,
+          });
+          if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
+          this.resetInactivityTimer();
+        }, this.INACTIVITY_WARNING_DELAY);
+        this.setState({ inactivityTimer: finalTimer });
+        return;
       }
     }, this.INACTIVITY_DELAY);
-    
-    this.setState({
-      inactivityTimer: mainTimer,
-      inactivityDialogTimer: dialogTimer,
-    });
+    this.setState({ inactivityTimer: timer });
   };
 
-  returnToHome = () => {
-    this.clearInactivityTimers();
-    this.setState({
-      showProductSelection: false,
-      showWelcomeScreen: true,
-      showEmailForm: false,
-      selectedProduct: null,
-      customerEmail: "",
-      wantReceipt: false,
-      wantReminder: false,
-      emailSubmitted: false,
-      showKeyboard: false,
-      inactivityDialogShown: false,
-    });
+  cancelInactivityTimer = () => {
+    if (this.state.inactivityTimer) {
+      clearTimeout(this.state.inactivityTimer);
+      this.setState({ inactivityTimer: null, inactivityDialogOpen: false });
+    }
   };
 
-  // Annule tous les timers (ex: en début de session)
-  cancelInactivityTimers = () => {
-    this.clearInactivityTimers();
-    this.setState({ inactivityDialogShown: false });
-  };
+  // Les autres méthodes (loadProducts, autoConnectSimulator, etc.) restent strictement identiques à votre version existante.
+  // Pour éviter des erreurs de copie, je les garde telles quelles. Seules les méthodes modifiées sont ci-dessus.
+  // Le code complet ci-dessous reprend l'ensemble de votre fichier, mais avec les modifications d'inactivité.
+  // Je fournis le fichier complet pour éviter les incohérences.
 
-  // ---- Les autres méthodes (loadProducts, autoConnectSimulator, etc.) restent strictement identiques ----
-  // Pour éviter la répétition, je les recopie ici telles qu'elles étaient dans votre dernier code.
-  // (Elles n'ont pas changé, je les ai simplement reprises de votre version précédente.)
-  // Je vous fournis le bloc complet à la fin, mais pour ne pas surcharger, je continue avec les modifications.
-  
-  // ==== REPRISE DE TOUTES LES MÉTHODES EXISTANTES (sauf celles modifiées) ====
-  // Je les écris intégralement pour que le fichier soit prêt à l'emploi.
-  
+  // ----- (Toutes les méthodes non modifiées sont présentes ci-dessous. Elles sont identiques à votre dernière version) -----
+
   loadProducts = async () => {
     const { backendURL } = this.state;
     if (!backendURL) return;
@@ -377,7 +377,7 @@ class App extends Component {
     await this.terminal.disconnectReader();
     this.setState({ reader: null, sessionActive: false, sessionStartTime: null, pendingPaymentIntentId: null });
     if (this.timerInterval) clearInterval(this.timerInterval);
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
   };
 
   registerAndConnectNewReader = async (label, registrationCode, location) => {
@@ -484,8 +484,7 @@ class App extends Component {
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
 
-      // Annuler les timers d'inactivité
-      this.cancelInactivityTimers();
+      this.cancelInactivityTimer();
 
       try {
         await fetch('http://localhost:5000/ouvrir', { method: 'POST' });
@@ -493,6 +492,7 @@ class App extends Component {
       } catch (err) {
         console.error("❌ Erreur ouverture serrure :", err);
       }
+
     } catch (err) {
       console.error("Erreur startPaymentAuthorization:", err);
       alert(`Erreur : ${err.message}`);
@@ -504,12 +504,12 @@ class App extends Component {
     const { showWelcomeScreen, sessionActive } = this.state;
     if (showWelcomeScreen && !sessionActive) {
       this.setState({ showWelcomeScreen: false, showProductSelection: true });
-      this.resetInactivityTimers();
+      this.resetInactivityTimer();
     }
   };
 
   selectProduct = (product) => {
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
     this.setState({
       selectedProduct: product,
       chargeAmount: product.price,
@@ -524,43 +524,43 @@ class App extends Component {
   };
 
   handleWantReceiptChange = (e) => {
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
     this.setState({ wantReceipt: e.target.checked });
   };
 
   handleWantReminderChange = (e) => {
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
     this.setState({ wantReminder: e.target.checked });
   };
 
   handleEmailChange = (e) => {
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
     this.setState({ customerEmail: e.target.value });
   };
 
   handleEmailFocus = () => {
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
     this.setState({ showKeyboard: true });
   };
 
   handleKeyboardChange = (value) => {
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
     this.setState({ customerEmail: value });
   };
 
   handleKeyboardEnter = (value) => {
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
     this.setState({ showKeyboard: false, customerEmail: value });
   };
 
   handleTestCardChange = (e) => {
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
     const card = testCards.find(c => c.number === e.target.value);
     if (card) this.setState({ selectedTestCard: card });
   };
 
   submitEmailForm = () => {
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
     const { wantReceipt, wantReminder, customerEmail } = this.state;
     if ((wantReceipt || wantReminder) && !customerEmail) {
       alert("Veuillez saisir une adresse email.");
@@ -571,7 +571,7 @@ class App extends Component {
   };
 
   cancelEmailForm = () => {
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
     this.setState({
       showProductSelection: true,
       selectedProduct: null,
@@ -582,9 +582,11 @@ class App extends Component {
   checkReminderAndUpdate = () => {
     const { sessionStartTime, selectedProduct, wantReminder, reminderSent, customerEmail, backendURL } = this.state;
     if (!sessionStartTime || !selectedProduct) return;
+
     const elapsedMs = Date.now() - sessionStartTime;
     const elapsedMinutes = Math.floor(elapsedMs / 60000);
     const chosenMinutes = parseInt(selectedProduct.name.split(' ')[0]);
+
     if (wantReminder && !reminderSent && chosenMinutes > 5 && elapsedMinutes >= chosenMinutes - 5) {
       this.sendReminder();
       this.setState({ reminderSent: true });
@@ -655,12 +657,12 @@ class App extends Component {
           });
           if (!response.ok) {
             const errorData = await response.json();
-            console.error("Incrémentation refusée:", errorData.error);
+            console.error("Incrémentation refusée par le backend:", errorData.error);
             break;
           }
           currentAuth = roundedAmount;
         } catch (err) {
-          console.error("Erreur incrémentation:", err);
+          console.error("Erreur réseau ou Stripe lors de l'incrémentation:", err);
           break;
         }
         attempts++;
@@ -671,11 +673,14 @@ class App extends Component {
 
     const capturedMinutes = Math.floor(finalCaptureAmount / this.pricePerMinute);
     const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
+
     const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
     const extraPrice = (capturedExtra * this.pricePerMinute / 100).toFixed(2);
     const totalPrice = (finalCaptureAmount / 100).toFixed(2);
     let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
-    if (capturedExtra > 0) description += `\nSupplément : ${capturedExtra} min (${extraPrice} €)`;
+    if (capturedExtra > 0) {
+      description += `\nSupplément : ${capturedExtra} min (${extraPrice} €)`;
+    }
     description += `\nTotal : ${totalPrice} €`;
 
     try {
@@ -689,6 +694,7 @@ class App extends Component {
           })
         });
       } catch (e) {}
+
       const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -698,11 +704,13 @@ class App extends Component {
         })
       });
       if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
+
       let msg = `✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`;
       if (extraMinutes > 0 && finalCaptureAmount < totalDue) {
         msg += `\n⚠️ Note : votre carte n'a pas permis de couvrir tout le supplément. Seul ${(finalCaptureAmount/100).toFixed(2)} € a été débité.`;
       }
       alert(msg);
+
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.resetSession();
     } catch (err) {
@@ -729,10 +737,9 @@ class App extends Component {
       currentAuthorizedAmount: 0,
       pricePerMinute: 0,
       showKeyboard: false,
-      inactivityDialogShown: false,
     });
     if (this.timerInterval) clearInterval(this.timerInterval);
-    this.resetInactivityTimers();
+    this.resetInactivityTimer();
   };
 
   cancelSession = () => {
@@ -781,8 +788,10 @@ class App extends Component {
       window.localStorage.removeItem("terminal.backendUrl");
     }
     this.initializeBackendClientAndTerminal(url);
-    this.setState({ backendURL: url }, () => { this.loadProducts(); });
-    this.resetInactivityTimers();
+    this.setState({ backendURL: url }, () => {
+      this.loadProducts();
+    });
+    this.resetInactivityTimer();
   };
 
   updateChargeAmount = amount => this.setState({ chargeAmount: parseInt(amount, 10) });
@@ -912,12 +921,21 @@ class App extends Component {
         }}>
           <h2>Options de la session</h2>
           <p>Vous avez choisi : <strong>{selectedProduct?.name} ({this.renderPrice(selectedProduct)})</strong></p>
-          <div style={{ backgroundColor: '#e8f0fe', padding: '8px', borderRadius: '8px', marginBottom: '15px', fontSize: '0.85rem', textAlign: 'left' }}>
+          
+          <div style={{ 
+            backgroundColor: '#e8f0fe', 
+            padding: '8px', 
+            borderRadius: '8px', 
+            marginBottom: '15px',
+            fontSize: '0.85rem',
+            textAlign: 'left'
+          }}>
             <p style={{ margin: '0 0 5px 0' }}><strong>ℹ️ Comment ça fonctionne :</strong></p>
             <p style={{ margin: '0 0 3px 0' }}>• Pré-autorisation (×2) – aucun débit immédiat</p>
             <p style={{ margin: '0 0 3px 0' }}>• Temps supplémentaire : <strong>0,50 €/min</strong></p>
             <p style={{ margin: '0' }}>• Vous ne payez que le temps réel</p>
           </div>
+          
           <div style={{ marginBottom: '10px' }}>
             <label><input type="checkbox" checked={wantReceipt} onChange={this.handleWantReceiptChange} /> Recevoir le reçu par email</label>
           </div>
@@ -944,13 +962,30 @@ class App extends Component {
             </button>
             <button onClick={this.cancelEmailForm} style={{ marginLeft: '10px', padding: '8px 16px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '0.9rem' }}>Annuler</button>
           </div>
+          
           {showKeyboard && (
-            <>
-              <div style={{ position: 'fixed', bottom: '210px', left: '10px', right: '10px', background: '#e8f0fe', padding: '6px', borderRadius: '5px', textAlign: 'center', fontSize: '0.9rem', zIndex: 999 }}>
-                📧 {customerEmail || 'Saisissez votre email...'}
-              </div>
-              <SimpleKeyboard onChange={this.handleKeyboardChange} onEnter={this.handleKeyboardEnter} onClose={() => this.setState({ showKeyboard: false })} />
-            </>
+            <div style={{
+              position: 'fixed',
+              bottom: '210px',
+              left: '10px',
+              right: '10px',
+              background: '#e8f0fe',
+              padding: '6px',
+              borderRadius: '5px',
+              textAlign: 'center',
+              fontSize: '0.9rem',
+              zIndex: 999
+            }}>
+              📧 {customerEmail || 'Saisissez votre email...'}
+            </div>
+          )}
+          
+          {showKeyboard && (
+            <SimpleKeyboard 
+              onChange={this.handleKeyboardChange} 
+              onEnter={this.handleKeyboardEnter}
+              onClose={() => this.setState({ showKeyboard: false })}
+            />
           )}
         </div>
       );
