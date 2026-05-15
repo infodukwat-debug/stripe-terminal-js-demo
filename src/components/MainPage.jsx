@@ -15,7 +15,7 @@ import Logs from "../Logs/Logs.jsx";
 import { css } from "emotion";
 
 const DEFAULT_BACKEND_URL = 'https://qnook-backend-unified.onrender.com';
-const EXTRA_MINUTE_PRICE = 100; // 1,00 € par minute supplémentaire
+const EXTRA_MINUTE_PRICE = 50; // 0,5 € par minute supplémentaire
 const INCREMENT_STEP_MINUTES = 5;
 const MAX_INCREMENT_ATTEMPTS = 20;
 
@@ -719,7 +719,7 @@ class App extends Component {
   const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
 
   const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
-  const extraPrice = (capturedExtra * this.pricePerMinute / 100).toFixed(2);
+  const extraPrice = (capturedExtra * EXTRA_MINUTE_PRICE / 100).toFixed(2);
   const totalPrice = (finalCaptureAmount / 100).toFixed(2);
   let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
   if (capturedExtra > 0) {
