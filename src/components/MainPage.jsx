@@ -19,6 +19,9 @@ const EXTRA_MINUTE_PRICE = 100; // 1,00 € par minute supplémentaire
 const INCREMENT_STEP_MINUTES = 5;
 const MAX_INCREMENT_ATTEMPTS = 20;
 
+// ⚠️ REMPLACEZ par l'IP de votre Raspberry Pi
+const RASPBERRY_PI_IP = '192.168.1.65';  // ← À MODIFIER
+
 const testCards = [
   { name: "Visa (succès)", number: "4242424242424242", type: "visa" },
   { name: "Refus - fonds insuffisants", number: "4000000000009995", type: "charge_declined_insufficient_funds" },
@@ -187,9 +190,12 @@ class App extends Component {
   startExitPolling = () => {
     this.exitPolling = setInterval(() => {
       if (this.state.sessionActive && !this.state.paymentInProgress) {
-        // ✅ MODIFICATION 1 : utilisation du proxy backend
-        fetch('/api/check-exit-proxy')
-          .then(res => res.json())
+        // ✅ Appel direct au Raspberry Pi
+        fetch(`http://${RASPBERRY_PI_IP}:5000/check-exit`)
+          .then(res => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+          })
           .then(data => {
             if (data.exit_requested) {
               console.log("📡 Fin de session demandée par les capteurs / bouton EXIT");
@@ -498,9 +504,9 @@ class App extends Component {
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
 
-      // ✅ MODIFICATION 2 : utilisation du proxy backend pour ouvrir la serrure
+      // ✅ Appel direct au Raspberry Pi pour ouvrir la serrure
       try {
-        await fetch('/api/ouvrir-serrure', { method: 'POST' });
+        await fetch(`http://${RASPBERRY_PI_IP}:5000/ouvrir`, { method: 'POST' });
         console.log("✅ Serrure ouverte");
       } catch (err) {
         console.error("❌ Erreur ouverture serrure :", err);
