@@ -1,3 +1,5 @@
+voici le contenu de mainpage, fais la modification sans toucher le reste:
+
 import React, { Component } from "react";
 
 import Client from "../client";
@@ -187,8 +189,7 @@ class App extends Component {
   startExitPolling = () => {
     this.exitPolling = setInterval(() => {
       if (this.state.sessionActive && !this.state.paymentInProgress) {
-        // ✅ MODIFICATION 1 : utilisation du proxy backend
-        fetch('/api/check-exit-proxy')
+        fetch('/check-exit')
           .then(res => res.json())
           .then(data => {
             if (data.exit_requested) {
@@ -498,9 +499,9 @@ class App extends Component {
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
 
-      // ✅ MODIFICATION 2 : utilisation du proxy backend pour ouvrir la serrure
+      // Ouverture immédiate de la serrure
       try {
-        await fetch('/api/ouvrir-serrure', { method: 'POST' });
+        await fetch('http://localhost:5000/ouvrir', { method: 'POST' });
         console.log("✅ Serrure ouverte");
       } catch (err) {
         console.error("❌ Erreur ouverture serrure :", err);
