@@ -19,9 +19,6 @@ const EXTRA_MINUTE_PRICE = 100; // 1,00 € par minute supplémentaire
 const INCREMENT_STEP_MINUTES = 5;
 const MAX_INCREMENT_ATTEMPTS = 20;
 
-// ⚠️ REMPLACEZ par l'IP de votre Raspberry Pi
-const RASPBERRY_PI_IP = '192.168.1.65';  // ← À MODIFIER
-
 const testCards = [
   { name: "Visa (succès)", number: "4242424242424242", type: "visa" },
   { name: "Refus - fonds insuffisants", number: "4000000000009995", type: "charge_declined_insufficient_funds" },
@@ -114,7 +111,42 @@ class SimpleKeyboard extends React.Component {
     );
   }
 }
-// ========== FIN COMPOSANT CLAVIER ==========
+
+// Modal d'inactivité personnalisée
+const InactivityModal = ({ onContinue, onQuit }) => (
+  <div style={{
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2000
+  }}>
+    <div style={{
+      backgroundColor: 'white',
+      padding: '30px',
+      borderRadius: '10px',
+      textAlign: 'center',
+      maxWidth: '400px',
+      boxShadow: '0 0 20px rgba(0,0,0,0.3)'
+    }}>
+      <h3>⚠️ Inactivité détectée</h3>
+      <p>Souhaitez-vous continuer votre sélection ?</p>
+      <div style={{ marginTop: '20px' }}>
+        <button onClick={onContinue} style={{ marginRight: '15px', padding: '8px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          Oui, continuer
+        </button>
+        <button onClick={onQuit} style={{ padding: '8px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          Non, quitter
+        </button>
+      </div>
+    </div>
+  </div>
+);
 
 class App extends Component {
   constructor(props) {
@@ -160,15 +192,11 @@ class App extends Component {
       currentAuthorizedAmount: 0,
       pricePerMinute: 0,
       showKeyboard: false,
-      // Gestion inactivité
+      // Inactivité
       showInactivityModal: false,
       inactivityTimer1: null,
       inactivityTimer2: null,
-      // Polling pour le bouton EXIT / capteurs
-      exitPolling: null,
     };
-    this.INACTIVITY_DELAY_MODAL = 15000;  // 15 sec
-    this.INACTIVITY_DELAY_QUIT = 30000;   // 30 sec
   }
 
   componentDidMount() {
@@ -176,47 +204,21 @@ class App extends Component {
     this.loadProducts();
     this.autoConnectSimulator();
     this.resetInactivityTimers();
-    // Lancement du polling pour la fin de session automatique (capteurs / bouton EXIT)
-    this.startExitPolling();
   }
 
   componentWillUnmount() {
     if (this.timerInterval) clearInterval(this.timerInterval);
     this.clearInactivityTimers();
-    if (this.exitPolling) clearInterval(this.exitPolling);
   }
-
-  // ========== POLLING POUR FIN DE SESSION (CAPTEURS / EXIT) ==========
-  startExitPolling = () => {
-    this.exitPolling = setInterval(() => {
-      if (this.state.sessionActive && !this.state.paymentInProgress) {
-        // ✅ Appel direct au Raspberry Pi
-        fetch(`http://${RASPBERRY_PI_IP}:5000/check-exit`)
-          .then(res => {
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return res.json();
-          })
-          .then(data => {
-            if (data.exit_requested) {
-              console.log("📡 Fin de session demandée par les capteurs / bouton EXIT");
-              this.endSession("capteurs");
-            }
-          })
-          .catch(err => console.error("Polling exit error:", err));
-      }
-    }, 1000);
-  };
 
   // ========== GESTION INACTIVITÉ ==========
   resetInactivityTimers = () => {
     if (this.state.sessionActive || this.state.paymentInProgress) return;
     this.clearInactivityTimers();
     
-    // Timer pour afficher la modale (15s)
     const timer1 = setTimeout(() => {
       if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showInactivityModal) {
         this.setState({ showInactivityModal: true });
-        // Timer pour quitter après 30s total (dans 15s)
         const timer2 = setTimeout(() => {
           if (!this.state.sessionActive && !this.state.paymentInProgress) {
             this.quitToWelcome();
@@ -280,7 +282,7 @@ class App extends Component {
 
   autoConnectSimulator = async () => {
     let attempts = 0;
-    const maxAttempts = 30; // 15 secondes max
+    const maxAttempts = 30;
     while (!this.terminal && attempts < maxAttempts) {
       await new Promise(r => setTimeout(r, 500));
       attempts++;
@@ -504,9 +506,9 @@ class App extends Component {
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
 
-      // ✅ Appel direct au Raspberry Pi pour ouvrir la serrure
+      // Ouverture de la serrure (appel local)
       try {
-        await fetch(`http://${RASPBERRY_PI_IP}:5000/ouvrir`, { method: 'POST' });
+        await fetch('http://localhost:5000/ouvrir', { method: 'POST' });
         console.log("✅ Serrure ouverte");
       } catch (err) {
         console.error("❌ Erreur ouverture serrure :", err);
@@ -633,8 +635,7 @@ class App extends Component {
     }
   };
 
-  endSession = async (origine = "bouton") => {
-    console.log(`🔚 endSession appelée depuis ${origine}`);
+  endSession = async () => {
     if (this.state.paymentInProgress) return;
     if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
       alert("Aucune session en cours");
@@ -696,7 +697,7 @@ class App extends Component {
     const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
 
     const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
-    const extraPrice = (capturedExtra * this.pricePerMinute / 100).toFixed(2);
+    const extraPrice = (capturedExtra * EXTRA_MINUTE_PRICE / 100).toFixed(2);
     const totalPrice = (finalCaptureAmount / 100).toFixed(2);
     let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
     if (capturedExtra > 0) {
@@ -871,12 +872,10 @@ class App extends Component {
       showInactivityModal,
     } = this.state;
 
-    // Affichage de la modale d'inactivité (priorité absolue)
     if (showInactivityModal) {
       return <InactivityModal onContinue={this.handleContinueSession} onQuit={this.handleQuitSession} />;
     }
 
-    // Écran d'accueil en veille
     if (showWelcomeScreen) {
       return (
         <div
@@ -902,7 +901,6 @@ class App extends Component {
       );
     }
 
-    // Sélection des produits
     if (showProductSelection && backendURL && reader && !sessionActive && !showEmailForm) {
       if (products.length === 0) return <div>Chargement des produits...</div>;
       return (
@@ -935,7 +933,6 @@ class App extends Component {
       );
     }
 
-    // Formulaire email
     if (showEmailForm && !emailSubmitted) {
       return (
         <div style={{ 
@@ -1038,7 +1035,7 @@ class App extends Component {
           <h2>Session en cours</h2>
           <p>Produit : {this.state.selectedProduct?.name} ({this.renderPrice(this.state.selectedProduct)})</p>
           <p style={{ fontSize: '3rem', fontFamily: 'monospace' }}>{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}</p>
-          <button onClick={() => this.endSession("bouton_ecran")} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          <button onClick={this.endSession} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
             {paymentInProgress ? "Paiement en cours..." : "Terminer et payer"}
           </button>
           <button onClick={this.cancelSession} style={{ marginLeft: '10px', padding: '10px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Annuler</button>
@@ -1058,41 +1055,5 @@ class App extends Component {
     );
   }
 }
-
-// Composant InactivityModal (à placer après SimpleKeyboard)
-const InactivityModal = ({ onContinue, onQuit }) => (
-  <div style={{
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2000
-  }}>
-    <div style={{
-      backgroundColor: 'white',
-      padding: '30px',
-      borderRadius: '10px',
-      textAlign: 'center',
-      maxWidth: '400px',
-      boxShadow: '0 0 20px rgba(0,0,0,0.3)'
-    }}>
-      <h3>⚠️ Inactivité détectée</h3>
-      <p>Souhaitez-vous continuer votre sélection ?</p>
-      <div style={{ marginTop: '20px' }}>
-        <button onClick={onContinue} style={{ marginRight: '15px', padding: '8px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-          Oui, continuer
-        </button>
-        <button onClick={onQuit} style={{ padding: '8px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-          Non, quitter
-        </button>
-      </div>
-    </div>
-  </div>
-);
 
 export default App;
