@@ -15,7 +15,7 @@ import Logs from "../Logs/Logs.jsx";
 import { css } from "emotion";
 
 const DEFAULT_BACKEND_URL = 'https://qnook-backend-unified.onrender.com';
-const EXTRA_MINUTE_PRICE = 50; // 0,5 € par minute supplémentaire
+const EXTRA_MINUTE_PRICE = 100; // 1,00 € par minute supplémentaire
 const INCREMENT_STEP_MINUTES = 5;
 const MAX_INCREMENT_ATTEMPTS = 20;
 
@@ -111,43 +111,7 @@ class SimpleKeyboard extends React.Component {
     );
   }
 }
-
-// ========== MODALE D'INACTIVITÉ ==========
-const InactivityModal = ({ onContinue, onQuit }) => (
-  <div style={{
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2000
-  }}>
-    <div style={{
-      backgroundColor: 'white',
-      padding: '30px',
-      borderRadius: '10px',
-      textAlign: 'center',
-      maxWidth: '400px',
-      boxShadow: '0 0 20px rgba(0,0,0,0.3)'
-    }}>
-      <h3>⚠️ Inactivité détectée</h3>
-      <p>Souhaitez-vous continuer votre sélection ?</p>
-      <div style={{ marginTop: '20px' }}>
-        <button onClick={onContinue} style={{ marginRight: '15px', padding: '8px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-          Oui, continuer
-        </button>
-        <button onClick={onQuit} style={{ padding: '8px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-          Non, quitter
-        </button>
-      </div>
-    </div>
-  </div>
-);
-// ========== FIN MODALE ==========
+// ========== FIN COMPOSANT CLAVIER ==========
 
 class App extends Component {
   constructor(props) {
@@ -197,6 +161,8 @@ class App extends Component {
       showInactivityModal: false,
       inactivityTimer1: null,
       inactivityTimer2: null,
+      // Polling pour le bouton EXIT / capteurs
+      exitPolling: null,
     };
     this.INACTIVITY_DELAY_MODAL = 15000;  // 15 sec
     this.INACTIVITY_DELAY_QUIT = 30000;   // 30 sec
@@ -207,18 +173,8 @@ class App extends Component {
     this.loadProducts();
     this.autoConnectSimulator();
     this.resetInactivityTimers();
-    this.exitPolling = setInterval(() => {
-        if (this.state.sessionActive && !this.state.paymentInProgress) {
-            fetch('/check-exit')
-                .then(res => res.json())
-                .then(data => {
-                    if (data.exit_requested) {
-                        this.endSession();
-                    }
-                })
-                .catch(err => console.error("Polling exit error:", err));
-        }
-    }, 1000);
+    // Lancement du polling pour la fin de session automatique (capteurs / bouton EXIT)
+    this.startExitPolling();
   }
 
   componentWillUnmount() {
@@ -226,6 +182,23 @@ class App extends Component {
     this.clearInactivityTimers();
     if (this.exitPolling) clearInterval(this.exitPolling);
   }
+
+  // ========== POLLING POUR FIN DE SESSION (CAPTEURS / EXIT) ==========
+  startExitPolling = () => {
+    this.exitPolling = setInterval(() => {
+      if (this.state.sessionActive && !this.state.paymentInProgress) {
+        fetch('/check-exit')
+          .then(res => res.json())
+          .then(data => {
+            if (data.exit_requested) {
+              console.log("📡 Fin de session demandée par les capteurs / bouton EXIT");
+              this.endSession("capteurs");
+            }
+          })
+          .catch(err => console.error("Polling exit error:", err));
+      }
+    }, 1000);
+  };
 
   // ========== GESTION INACTIVITÉ ==========
   resetInactivityTimers = () => {
@@ -653,130 +626,114 @@ class App extends Component {
     }
   };
 
- endSession = async () => {
-  if (this.state.paymentInProgress) return;
-  if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
-    alert("Aucune session en cours");
-    return;
-  }
+  endSession = async (origine = "bouton") => {
+    console.log(`🔚 endSession appelée depuis ${origine}`);
+    if (this.state.paymentInProgress) return;
+    if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
+      alert("Aucune session en cours");
+      return;
+    }
 
-  this.setState({ paymentInProgress: true });
+    this.setState({ paymentInProgress: true });
 
-  const elapsedMs = Date.now() - this.state.sessionStartTime;
-  const elapsedMinutes = Math.floor(elapsedMs / 60000);
-  const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
-  let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
-  const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
-  const totalDue = this.state.selectedProduct.price + extraAmount;
+    const elapsedMs = Date.now() - this.state.sessionStartTime;
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
+    const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
+    let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
+    const totalDue = this.state.selectedProduct.price + extraAmount;
 
-  let finalCaptureAmount;
-  let needIncrement = false;
+    let finalCaptureAmount;
+    let needIncrement = false;
 
-  if (extraMinutes === 0) {
-    finalCaptureAmount = this.state.selectedProduct.price;
-  } else {
-    finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
-    needIncrement = totalDue > this.currentAuthorizedAmount;
-  }
+    if (extraMinutes === 0) {
+      finalCaptureAmount = this.state.selectedProduct.price;
+    } else {
+      finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
+      needIncrement = totalDue > this.currentAuthorizedAmount;
+    }
 
-  if (needIncrement) {
-    let currentAuth = this.currentAuthorizedAmount;
-    let attempts = 0;
-    const MAX_INCREMENT_ATTEMPTS = 8; // On garde une marge (limite Stripe = 10)
-    
-    while (currentAuth < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
-      // Calcul du temps supplémentaire non encore couvert
-      const uncoveredCents = totalDue - currentAuth;
-      const uncoveredMinutes = Math.ceil(uncoveredCents / this.pricePerMinute);
-      
-      // Choix du pas d'incrémentation (adaptatif)
-      let stepMinutes;
-      if (uncoveredMinutes <= 3) {
-        stepMinutes = 1;       // Pas fin pour les derniers instants
-      } else if (uncoveredMinutes <= 10) {
-        stepMinutes = 5;       // Pas moyen
-      } else {
-        stepMinutes = 10;      // Pas large pour les longs dépassements
+    if (needIncrement) {
+      let currentAuth = this.currentAuthorizedAmount;
+      let attempts = 0;
+      const stepCents = Math.ceil(this.pricePerMinute * INCREMENT_STEP_MINUTES);
+      while (currentAuth < totalDue && attempts < MAX_INCREMENT_ATTEMPTS) {
+        const nextAmount = Math.min(totalDue, currentAuth + stepCents);
+        const roundedAmount = Math.ceil(nextAmount);
+        try {
+          const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paymentIntentId: this.pendingPaymentIntentId,
+              newAmount: roundedAmount
+            })
+          });
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.error("Incrémentation refusée par le backend:", errorData.error);
+            break;
+          }
+          currentAuth = roundedAmount;
+        } catch (err) {
+          console.error("Erreur réseau ou Stripe lors de l'incrémentation:", err);
+          break;
+        }
+        attempts++;
+        await new Promise(r => setTimeout(r, 300));
       }
-      
-      const stepCents = Math.ceil(this.pricePerMinute * stepMinutes);
-      const nextAmount = Math.min(totalDue, currentAuth + stepCents);
-      const roundedAmount = Math.ceil(nextAmount);
-      
+      finalCaptureAmount = Math.min(totalDue, currentAuth);
+    }
+
+    const capturedMinutes = Math.floor(finalCaptureAmount / this.pricePerMinute);
+    const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
+
+    const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
+    const extraPrice = (capturedExtra * this.pricePerMinute / 100).toFixed(2);
+    const totalPrice = (finalCaptureAmount / 100).toFixed(2);
+    let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
+    if (capturedExtra > 0) {
+      description += `\nSupplément : ${capturedExtra} min (${extraPrice} €)`;
+    }
+    description += `\nTotal : ${totalPrice} €`;
+
+    try {
       try {
-        const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
+        await fetch(`${this.state.backendURL}/update-payment-intent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             paymentIntentId: this.pendingPaymentIntentId,
-            newAmount: roundedAmount
+            description: description
           })
         });
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error("Incrémentation refusée par le backend:", errorData.error);
-          break;
-        }
-        currentAuth = roundedAmount;
-      } catch (err) {
-        console.error("Erreur réseau ou Stripe lors de l'incrémentation:", err);
-        break;
-      }
-      attempts++;
-      await new Promise(r => setTimeout(r, 300));
-    }
-    finalCaptureAmount = Math.min(totalDue, currentAuth);
-  }
+      } catch (e) {}
 
-  const capturedMinutes = Math.floor(finalCaptureAmount / this.pricePerMinute);
-  const capturedExtra = Math.max(0, capturedMinutes - chosenMinutes);
-
-  const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
-  const extraPrice = (capturedExtra * EXTRA_MINUTE_PRICE / 100).toFixed(2);
-  const totalPrice = (finalCaptureAmount / 100).toFixed(2);
-  let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
-  if (capturedExtra > 0) {
-    description += `\nSupplément : ${capturedExtra} min (${extraPrice} €)`;
-  }
-  description += `\nTotal : ${totalPrice} €`;
-
-  try {
-    try {
-      await fetch(`${this.state.backendURL}/update-payment-intent`, {
+      const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentIntentId: this.pendingPaymentIntentId,
-          description: description
+          amountToCapture: finalCaptureAmount
         })
       });
-    } catch (e) {}
+      if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
 
-    const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        paymentIntentId: this.pendingPaymentIntentId,
-        amountToCapture: finalCaptureAmount
-      })
-    });
-    if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
+      let msg = `✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`;
+      if (extraMinutes > 0 && finalCaptureAmount < totalDue) {
+        msg += `\n⚠️ Note : votre carte n'a pas permis de couvrir tout le supplément. Seul ${(finalCaptureAmount/100).toFixed(2)} € a été débité.`;
+      }
+      alert(msg);
 
-    let msg = `✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`;
-    if (extraMinutes > 0 && finalCaptureAmount < totalDue) {
-      msg += `\n⚠️ Note : votre carte n'a pas permis de couvrir tout le supplément. Seul ${(finalCaptureAmount/100).toFixed(2)} € a été débité.`;
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.resetSession();
+    } catch (err) {
+      console.error("Erreur endSession:", err);
+      alert(`❌ Erreur : ${err.message}`);
+    } finally {
+      this.setState({ paymentInProgress: false });
     }
-    alert(msg);
-
-    if (this.timerInterval) clearInterval(this.timerInterval);
-    this.resetSession();
-  } catch (err) {
-    console.error("Erreur endSession:", err);
-    alert(`❌ Erreur : ${err.message}`);
-  } finally {
-    this.setState({ paymentInProgress: false });
-  }
-};
+  };
 
   resetSession = () => {
     this.setState({
@@ -1074,7 +1031,7 @@ class App extends Component {
           <h2>Session en cours</h2>
           <p>Produit : {this.state.selectedProduct?.name} ({this.renderPrice(this.state.selectedProduct)})</p>
           <p style={{ fontSize: '3rem', fontFamily: 'monospace' }}>{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}</p>
-          <button onClick={this.endSession} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          <button onClick={() => this.endSession("bouton_ecran")} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
             {paymentInProgress ? "Paiement en cours..." : "Terminer et payer"}
           </button>
           <button onClick={this.cancelSession} style={{ marginLeft: '10px', padding: '10px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Annuler</button>
@@ -1094,5 +1051,41 @@ class App extends Component {
     );
   }
 }
+
+// Composant InactivityModal (à placer après SimpleKeyboard)
+const InactivityModal = ({ onContinue, onQuit }) => (
+  <div style={{
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2000
+  }}>
+    <div style={{
+      backgroundColor: 'white',
+      padding: '30px',
+      borderRadius: '10px',
+      textAlign: 'center',
+      maxWidth: '400px',
+      boxShadow: '0 0 20px rgba(0,0,0,0.3)'
+    }}>
+      <h3>⚠️ Inactivité détectée</h3>
+      <p>Souhaitez-vous continuer votre sélection ?</p>
+      <div style={{ marginTop: '20px' }}>
+        <button onClick={onContinue} style={{ marginRight: '15px', padding: '8px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          Oui, continuer
+        </button>
+        <button onClick={onQuit} style={{ padding: '8px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          Non, quitter
+        </button>
+      </div>
+    </div>
+  </div>
+);
 
 export default App;
