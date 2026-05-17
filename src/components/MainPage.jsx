@@ -187,7 +187,8 @@ class App extends Component {
   startExitPolling = () => {
     this.exitPolling = setInterval(() => {
       if (this.state.sessionActive && !this.state.paymentInProgress) {
-        fetch('/check-exit')
+        // ✅ MODIFICATION 1 : utilisation du proxy backend
+        fetch('/api/check-exit-proxy')
           .then(res => res.json())
           .then(data => {
             if (data.exit_requested) {
@@ -497,9 +498,9 @@ class App extends Component {
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
 
-      // Ouverture immédiate de la serrure
+      // ✅ MODIFICATION 2 : utilisation du proxy backend pour ouvrir la serrure
       try {
-        await fetch('http://localhost:5000/ouvrir', { method: 'POST' });
+        await fetch('/api/ouvrir-serrure', { method: 'POST' });
         console.log("✅ Serrure ouverte");
       } catch (err) {
         console.error("❌ Erreur ouverture serrure :", err);
