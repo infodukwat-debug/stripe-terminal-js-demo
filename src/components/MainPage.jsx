@@ -1,5 +1,3 @@
-voici le contenu de mainpage, fais la modification sans toucher le reste:
-
 import React, { Component } from "react";
 
 import Client from "../client";
