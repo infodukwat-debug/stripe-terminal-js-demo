@@ -207,11 +207,24 @@ class App extends Component {
     this.loadProducts();
     this.autoConnectSimulator();
     this.resetInactivityTimers();
+    this.exitPolling = setInterval(() => {
+        if (this.state.sessionActive && !this.state.paymentInProgress) {
+            fetch('/check-exit')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.exit_requested) {
+                        this.endSession();
+                    }
+                })
+                .catch(err => console.error("Polling exit error:", err));
+        }
+    }, 1000);
   }
 
   componentWillUnmount() {
     if (this.timerInterval) clearInterval(this.timerInterval);
     this.clearInactivityTimers();
+    if (this.exitPolling) clearInterval(this.exitPolling);
   }
 
   // ========== GESTION INACTIVITÉ ==========
