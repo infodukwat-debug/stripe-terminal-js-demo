@@ -208,20 +208,20 @@ class App extends Component {
   this.resetInactivityTimers();
 
   // Polling toutes les secondes pour vérifier si la session est encore active
-  this.sessionPolling = setInterval(async () => {
-    if (this.state.sessionActive && !this.state.paymentInProgress) {
-      try {
-        const response = await fetch('http://localhost:5000/is-session-active');
-        const data = await response.json();
-        if (!data.active) {
-          console.log("Session terminée par le serveur (porte + absence)");
-          await this.endSession();
-        }
-      } catch (err) {
-        console.error("Polling erreur", err);
+ this.sessionPolling = setInterval(async () => {
+  if (this.state.sessionActive && !this.state.paymentInProgress) {
+    try {
+      const response = await fetch('http://localhost:5000/is-session-active');
+      const data = await response.json();
+      if (!data.active) {
+        console.log("🔔 Appel de endSession() depuis le polling");
+        await this.endSession();   // maintenant this est bien le composant
       }
+    } catch (err) {
+      console.error("Polling erreur", err);
     }
-  }, 1000);
+  }
+}, 1000);
 }
 
   componentWillUnmount() {
