@@ -207,27 +207,24 @@ componentDidMount() {
   this.autoConnectSimulator();
   this.resetInactivityTimers();
 
-  // Polling toutes les secondes pour vérifier si la session est encore active
+  // Nettoyer l'ancien polling s'il existe
+  if (this.sessionPolling) clearInterval(this.sessionPolling);
+  
+  // Polling toutes les secondes
   this.sessionPolling = setInterval(() => {
-    // Vérifier qu'une session est active
+    // Ne rien faire si pas de session active
     if (!this.state.sessionActive) return;
     if (this.state.paymentInProgress) return;
     
-    console.log("[Polling] Vérification...");
-    
     fetch('http://localhost:5000/is-session-active')
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
+      .then(res => res.json())
       .then(data => {
-        console.log("[Polling] active =", data.active);
         if (!data.active) {
-          console.log("🔔 Fin de session détectée ! Appel de endSession()");
+          console.log("🔔 Fin de session détectée");
           this.endSession();
         }
       })
-      .catch(err => console.error("[Polling] Erreur:", err));
+      .catch(err => console.error("Polling erreur:", err));
   }, 1000);
 }
 
