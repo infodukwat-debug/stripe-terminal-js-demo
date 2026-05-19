@@ -201,34 +201,42 @@ class App extends Component {
     };
   }
 
- componentDidMount() {
+componentDidMount() {
   this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
   this.loadProducts();
   this.autoConnectSimulator();
   this.resetInactivityTimers();
 
   // Polling toutes les secondes pour vérifier si la session est encore active
- this.sessionPolling = setInterval(async () => {
-  if (this.state.sessionActive && !this.state.paymentInProgress) {
-    try {
-      const response = await fetch('http://localhost:5000/is-session-active');
-      const data = await response.json();
-      if (!data.active) {
-        console.log("🔔 Appel de endSession() depuis le polling");
-        await this.endSession();   // maintenant this est bien le composant
-      }
-    } catch (err) {
-      console.error("Polling erreur", err);
-    }
-  }
-}, 1000);
+  this.sessionPolling = setInterval(() => {
+    // Vérifier qu'une session est active
+    if (!this.state.sessionActive) return;
+    if (this.state.paymentInProgress) return;
+    
+    console.log("[Polling] Vérification...");
+    
+    fetch('http://localhost:5000/is-session-active')
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        console.log("[Polling] active =", data.active);
+        if (!data.active) {
+          console.log("🔔 Fin de session détectée ! Appel de endSession()");
+          this.endSession();
+        }
+      })
+      .catch(err => console.error("[Polling] Erreur:", err));
+  }, 1000);
 }
 
-  componentWillUnmount() {
+componentWillUnmount() {
   if (this.timerInterval) clearInterval(this.timerInterval);
   if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
   if (this.sessionPolling) clearInterval(this.sessionPolling);
 }
+  
 
   // ========== GESTION INACTIVITÉ ==========
   resetInactivityTimers = () => {
