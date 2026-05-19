@@ -197,6 +197,7 @@ class App extends Component {
       inactivityTimer1: null,
       inactivityTimer2: null,
       sessionPolling: null,
+      timerInterval: null,
     };
   }
 
@@ -206,50 +207,43 @@ class App extends Component {
     this.autoConnectSimulator();
     this.resetInactivityTimers();
 
-    // Nettoyer l'ancien polling s'il existe
-    if (this.sessionPolling) clearInterval(this.sessionPolling);
-    
-    // Polling toutes les secondes avec délai de sécurité
+    // Polling toutes les secondes pour vérifier si la session est encore active
     this.sessionPolling = setInterval(() => {
-      // Ne rien faire si pas de session active
+      // Vérifier qu'une session est active
       if (!this.state.sessionActive) return;
       if (this.state.paymentInProgress) return;
       
-      // ⚠️ Délai de sécurité : ignorer les 3 premières secondes de session
-      if (this.state.sessionStartTime) {
-        const elapsed = (Date.now() - this.state.sessionStartTime) / 1000;
-        if (elapsed < 3) {
-          return;
-        }
-      }
-      
       fetch('http://localhost:5000/is-session-active')
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
         .then(data => {
           if (!data.active) {
-            console.log("🔔 Fin de session détectée");
+            console.log("🔔 Fin de session détectée par les capteurs !");
             this.endSession();
           }
         })
-        .catch(err => console.error("Polling erreur:", err));
+        .catch(err => console.error("[Polling] Erreur:", err));
     }, 1000);
   }
 
   componentWillUnmount() {
-    if (this.timerInterval) clearInterval(this.timerInterval);
+    if (this.state.timerInterval) clearInterval(this.state.timerInterval);
+    this.clearInactivityTimers();
     if (this.sessionPolling) clearInterval(this.sessionPolling);
   }
 
   // ========== GESTION INACTIVITÉ ==========
   resetInactivityTimers = () => {
-    if (this.state.sessionActive || this.state.paymentInProgress || this.state.showWelcomeScreen) return;
+    if (this.state.sessionActive || this.state.paymentInProgress) return;
     this.clearInactivityTimers();
     
     const timer1 = setTimeout(() => {
-      if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showWelcomeScreen && !this.state.showInactivityModal) {
+      if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showInactivityModal) {
         this.setState({ showInactivityModal: true });
         const timer2 = setTimeout(() => {
-          if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showWelcomeScreen) {
+          if (!this.state.sessionActive && !this.state.paymentInProgress) {
             this.quitToWelcome();
           }
         }, 15000);
@@ -281,7 +275,6 @@ class App extends Component {
   };
 
   handleUserInteraction = () => {
-    if (this.state.showWelcomeScreen) return;
     if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showInactivityModal) {
       this.resetInactivityTimers();
     }
@@ -427,7 +420,7 @@ class App extends Component {
   disconnectReader = async () => {
     await this.terminal.disconnectReader();
     this.setState({ reader: null, sessionActive: false, sessionStartTime: null, pendingPaymentIntentId: null });
-    if (this.timerInterval) clearInterval(this.timerInterval);
+    if (this.state.timerInterval) clearInterval(this.state.timerInterval);
     this.resetInactivityTimers();
   };
 
@@ -533,8 +526,8 @@ class App extends Component {
         showProductSelection: false,
         showWelcomeScreen: false,
       });
-      if (this.timerInterval) clearInterval(this.timerInterval);
-      this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
+      if (this.state.timerInterval) clearInterval(this.state.timerInterval);
+      this.setState({ timerInterval: setInterval(() => this.checkReminderAndUpdate(), 1000) });
 
       // Ouverture de la serrure (appel local)
       try {
@@ -666,9 +659,6 @@ class App extends Component {
   };
 
   endSession = async () => {
-    // Nettoyer les timers d'inactivité immédiatement
-    this.clearInactivityTimers();
-    
     if (this.state.paymentInProgress) return;
     if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
       alert("Aucune session en cours");
@@ -762,7 +752,11 @@ class App extends Component {
       if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
 
       alert(`✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`);
-      if (this.timerInterval) clearInterval(this.timerInterval);
+      if (this.state.timerInterval) clearInterval(this.state.timerInterval);
+      
+      // Appeler Flask pour confirmer la fin de session
+      await fetch('http://localhost:5000/end-session', { method: 'POST' }).catch(e => console.warn);
+      
       this.resetSession();
     } catch (err) {
       console.error("Erreur endSession:", err);
@@ -789,7 +783,7 @@ class App extends Component {
       pricePerMinute: 0,
       showKeyboard: false,
     });
-    if (this.timerInterval) clearInterval(this.timerInterval);
+    if (this.state.timerInterval) clearInterval(this.state.timerInterval);
     this.resetInactivityTimers();
   };
 
@@ -892,7 +886,6 @@ class App extends Component {
       wantReceipt,
       wantReminder,
       customerEmail,
-      selectedTestCard,
       sessionActive,
       paymentInProgress,
       reader,
@@ -1064,7 +1057,7 @@ class App extends Component {
           <h2>Session en cours</h2>
           <p>Produit : {this.state.selectedProduct?.name} ({this.renderPrice(this.state.selectedProduct)})</p>
           <p style={{ fontSize: '3rem', fontFamily: 'monospace' }}>{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}</p>
-          <button onClick={this.endSession} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          <button onClick={() => this.endSession()} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
             {paymentInProgress ? "Paiement en cours..." : "Terminer et payer"}
           </button>
           <button onClick={this.cancelSession} style={{ marginLeft: '10px', padding: '10px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Annuler</button>
@@ -1076,7 +1069,6 @@ class App extends Component {
   }
 
   render() {
-    const { backendURL, reader } = this.state;
     return (
       <div className={css`display: flex; align-items: center; justify-content: center; min-height: 100vh;`}>
         {this.renderForm()}
