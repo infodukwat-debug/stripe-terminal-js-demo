@@ -197,43 +197,45 @@ class App extends Component {
       inactivityTimer1: null,
       inactivityTimer2: null,
       sessionPolling: null,
-      timerInterval: null,
+
     };
   }
 
-  componentDidMount() {
-    this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
-    this.loadProducts();
-    this.autoConnectSimulator();
-    this.resetInactivityTimers();
+componentDidMount() {
+  this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
+  this.loadProducts();
+  this.autoConnectSimulator();
+  this.resetInactivityTimers();
 
-    // Polling toutes les secondes pour vérifier si la session est encore active
-    this.sessionPolling = setInterval(() => {
-      // Vérifier qu'une session est active
-      if (!this.state.sessionActive) return;
-      if (this.state.paymentInProgress) return;
-      
-      fetch('http://localhost:5000/is-session-active')
-        .then(res => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json();
-        })
-        .then(data => {
-          if (!data.active) {
-            console.log("🔔 Fin de session détectée par les capteurs !");
-            this.endSession();
-          }
-        })
-        .catch(err => console.error("[Polling] Erreur:", err));
-    }, 1000);
-  }
+  // Polling toutes les secondes pour vérifier si la session est encore active
+  this.sessionPolling = setInterval(() => {
+    // Vérifier qu'une session est active
+    if (!this.state.sessionActive) return;
+    if (this.state.paymentInProgress) return;
+    
+    console.log("[Polling] Vérification...");
+    
+    fetch('http://localhost:5000/is-session-active')
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        console.log("[Polling] active =", data.active);
+        if (!data.active) {
+          console.log("🔔 Fin de session détectée ! Appel de endSession()");
+          this.endSession();
+        }
+      })
+      .catch(err => console.error("[Polling] Erreur:", err));
+  }, 1000);
+}
 
-  componentWillUnmount() {
-    if (this.state.timerInterval) clearInterval(this.state.timerInterval);
-    this.clearInactivityTimers();
-    if (this.sessionPolling) clearInterval(this.sessionPolling);
-  }
-
+componentWillUnmount() {
+  if (this.timerInterval) clearInterval(this.timerInterval);
+  if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
+  if (this.sessionPolling) clearInterval(this.sessionPolling);
+}
   // ========== GESTION INACTIVITÉ ==========
   resetInactivityTimers = () => {
     if (this.state.sessionActive || this.state.paymentInProgress) return;
@@ -420,7 +422,7 @@ class App extends Component {
   disconnectReader = async () => {
     await this.terminal.disconnectReader();
     this.setState({ reader: null, sessionActive: false, sessionStartTime: null, pendingPaymentIntentId: null });
-    if (this.state.timerInterval) clearInterval(this.state.timerInterval);
+    if (this.timerInterval) clearInterval(this.timerInterval);
     this.resetInactivityTimers();
   };
 
@@ -526,8 +528,8 @@ class App extends Component {
         showProductSelection: false,
         showWelcomeScreen: false,
       });
-      if (this.state.timerInterval) clearInterval(this.state.timerInterval);
-      this.setState({ timerInterval: setInterval(() => this.checkReminderAndUpdate(), 1000) });
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
 
       // Ouverture de la serrure (appel local)
       try {
@@ -658,113 +660,109 @@ class App extends Component {
     }
   };
 
-  endSession = async () => {
-    if (this.state.paymentInProgress) return;
-    if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
-      alert("Aucune session en cours");
-      return;
-    }
+endSession = async () => {
+  if (this.state.paymentInProgress) return;
+  if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
+    alert("Aucune session en cours");
+    return;
+  }
 
-    this.setState({ paymentInProgress: true });
+  this.setState({ paymentInProgress: true });
 
-    const elapsedMs = Date.now() - this.state.sessionStartTime;
-    const elapsedMinutes = Math.floor(elapsedMs / 60000);
-    const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
-    let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
-    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
-    const totalDue = this.state.selectedProduct.price + extraAmount;
+  const elapsedMs = Date.now() - this.state.sessionStartTime;
+  const elapsedMinutes = Math.floor(elapsedMs / 60000);
+  const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
+  let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+  const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
+  const totalDue = this.state.selectedProduct.price + extraAmount;
 
-    let finalCaptureAmount;
-    let needIncrement = false;
+  let finalCaptureAmount;
+  let needIncrement = false;
 
-    if (extraMinutes === 0) {
-      finalCaptureAmount = this.state.selectedProduct.price;
-    } else {
-      finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
-      needIncrement = totalDue > this.currentAuthorizedAmount;
-    }
+  if (extraMinutes === 0) {
+    finalCaptureAmount = this.state.selectedProduct.price;
+  } else {
+    finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
+    needIncrement = totalDue > this.currentAuthorizedAmount;
+  }
 
-    // Incrémentation adaptative
-    if (needIncrement) {
-      let currentAuth = this.currentAuthorizedAmount;
-      let attempts = 0;
-      const MAX_ATTEMPTS = 10;
-      while (currentAuth < totalDue && attempts < MAX_ATTEMPTS) {
-        const coveredMinutes = currentAuth / this.pricePerMinute;
-        const uncoveredMinutes = Math.max(0, (totalDue / this.pricePerMinute) - coveredMinutes);
-        let stepMinutes;
-        if (uncoveredMinutes <= 5) stepMinutes = 1;
-        else if (uncoveredMinutes <= 15) stepMinutes = 5;
-        else stepMinutes = 10;
-        if (attempts >= 8 && stepMinutes < 5) stepMinutes = 5;
-        const stepCents = Math.ceil(this.pricePerMinute * stepMinutes);
-        const nextAmount = Math.min(totalDue, currentAuth + stepCents);
-        const roundedAmount = Math.ceil(nextAmount);
-        try {
-          const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              paymentIntentId: this.pendingPaymentIntentId,
-              newAmount: roundedAmount
-            })
-          });
-          if (!response.ok) throw new Error((await response.json()).error);
-          currentAuth = roundedAmount;
-        } catch (err) {
-          console.error("Incrémentation refusée", err);
-          break;
-        }
-        attempts++;
-        await new Promise(r => setTimeout(r, 300));
+  // Incrémentation adaptative (inchangée)
+  if (needIncrement) {
+    let currentAuth = this.currentAuthorizedAmount;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 10;
+    while (currentAuth < totalDue && attempts < MAX_ATTEMPTS) {
+      const coveredMinutes = currentAuth / this.pricePerMinute;
+      const uncoveredMinutes = Math.max(0, (totalDue / this.pricePerMinute) - coveredMinutes);
+      let stepMinutes;
+      if (uncoveredMinutes <= 5) stepMinutes = 1;
+      else if (uncoveredMinutes <= 15) stepMinutes = 5;
+      else stepMinutes = 10;
+      if (attempts >= 8 && stepMinutes < 5) stepMinutes = 5;
+      const stepCents = Math.ceil(this.pricePerMinute * stepMinutes);
+      const nextAmount = Math.min(totalDue, currentAuth + stepCents);
+      const roundedAmount = Math.ceil(nextAmount);
+      try {
+        const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paymentIntentId: this.pendingPaymentIntentId,
+            newAmount: roundedAmount
+          })
+        });
+        if (!response.ok) throw new Error((await response.json()).error);
+        currentAuth = roundedAmount;
+      } catch (err) {
+        console.error("Incrémentation refusée", err);
+        break;
       }
-      finalCaptureAmount = Math.min(totalDue, currentAuth);
+      attempts++;
+      await new Promise(r => setTimeout(r, 300));
     }
+    finalCaptureAmount = Math.min(totalDue, currentAuth);
+  }
 
-    // Construction description
-    const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
-    const extraPrice = ((finalCaptureAmount - this.state.selectedProduct.price) / 100).toFixed(2);
-    const totalPrice = (finalCaptureAmount / 100).toFixed(2);
-    let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
-    if (extraMinutes > 0) description += `\nSupplément : ${extraMinutes} min (${extraPrice} €)`;
-    description += `\nTotal : ${totalPrice} €`;
+  // Construction description (inchangée)
+  const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
+  const extraPrice = ((finalCaptureAmount - this.state.selectedProduct.price) / 100).toFixed(2);
+  const totalPrice = (finalCaptureAmount / 100).toFixed(2);
+  let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
+  if (extraMinutes > 0) description += `\nSupplément : ${extraMinutes} min (${extraPrice} €)`;
+  description += `\nTotal : ${totalPrice} €`;
 
-    try {
-      // 1. Mettre à jour la description
-      await fetch(`${this.state.backendURL}/update-payment-intent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentIntentId: this.pendingPaymentIntentId,
-          description: description
-        })
-      }).catch(e => console.warn);
+  try {
+    // 1. Mettre à jour la description
+    await fetch(`${this.state.backendURL}/update-payment-intent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        paymentIntentId: this.pendingPaymentIntentId,
+        description: description
+      })
+    }).catch(e => console.warn);
 
-      // 2. Capturer le paiement
-      const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentIntentId: this.pendingPaymentIntentId,
-          amountToCapture: finalCaptureAmount
-        })
-      });
-      if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
+    // 2. Capturer le paiement
+    const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        paymentIntentId: this.pendingPaymentIntentId,
+        amountToCapture: finalCaptureAmount
+      })
+    });
+    if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
 
-      alert(`✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`);
-      if (this.state.timerInterval) clearInterval(this.state.timerInterval);
-      
-      // Appeler Flask pour confirmer la fin de session
-      await fetch('http://localhost:5000/end-session', { method: 'POST' }).catch(e => console.warn);
-      
-      this.resetSession();
-    } catch (err) {
-      console.error("Erreur endSession:", err);
-      alert(`❌ Erreur : ${err.message}`);
-    } finally {
-      this.setState({ paymentInProgress: false });
-    }
-  };
+    alert(`✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`);
+    if (this.timerInterval) clearInterval(this.timerInterval);
+    this.resetSession();
+  } catch (err) {
+    console.error("Erreur endSession:", err);
+    alert(`❌ Erreur : ${err.message}`);
+  } finally {
+    this.setState({ paymentInProgress: false });
+  }
+};
 
   resetSession = () => {
     this.setState({
@@ -783,7 +781,7 @@ class App extends Component {
       pricePerMinute: 0,
       showKeyboard: false,
     });
-    if (this.state.timerInterval) clearInterval(this.state.timerInterval);
+    if (this.timerInterval) clearInterval(this.timerInterval);
     this.resetInactivityTimers();
   };
 
@@ -886,6 +884,7 @@ class App extends Component {
       wantReceipt,
       wantReminder,
       customerEmail,
+      selectedTestCard,
       sessionActive,
       paymentInProgress,
       reader,
@@ -1057,7 +1056,7 @@ class App extends Component {
           <h2>Session en cours</h2>
           <p>Produit : {this.state.selectedProduct?.name} ({this.renderPrice(this.state.selectedProduct)})</p>
           <p style={{ fontSize: '3rem', fontFamily: 'monospace' }}>{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}</p>
-          <button onClick={() => this.endSession()} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          <button onClick={this.endSession} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
             {paymentInProgress ? "Paiement en cours..." : "Terminer et payer"}
           </button>
           <button onClick={this.cancelSession} style={{ marginLeft: '10px', padding: '10px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Annuler</button>
@@ -1069,6 +1068,7 @@ class App extends Component {
   }
 
   render() {
+    const { backendURL, reader } = this.state;
     return (
       <div className={css`display: flex; align-items: center; justify-content: center; min-height: 100vh;`}>
         {this.renderForm()}
