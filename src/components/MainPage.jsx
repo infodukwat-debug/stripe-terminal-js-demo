@@ -239,23 +239,32 @@ componentWillUnmount() {
   
 
   // ========== GESTION INACTIVITÉ ==========
-  resetInactivityTimers = () => {
-    if (this.state.sessionActive || this.state.paymentInProgress) return;
-    this.clearInactivityTimers();
-    
-    const timer1 = setTimeout(() => {
-      if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showInactivityModal) {
-        this.setState({ showInactivityModal: true });
-        const timer2 = setTimeout(() => {
-          if (!this.state.sessionActive && !this.state.paymentInProgress) {
-            this.quitToWelcome();
-          }
-        }, 15000);
-        this.setState({ inactivityTimer2: timer2 });
-      }
-    }, 15000);
-    this.setState({ inactivityTimer1: timer1 });
-  };
+resetInactivityTimers = () => {
+  // ❌ Ne pas réinitialiser si la session est active OU si on est sur l'écran d'accueil
+  if (this.state.sessionActive || this.state.paymentInProgress || this.state.showWelcomeScreen) return;
+  this.clearInactivityTimers();
+  
+  const timer1 = setTimeout(() => {
+    if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showWelcomeScreen && !this.state.showInactivityModal) {
+      this.setState({ showInactivityModal: true });
+      const timer2 = setTimeout(() => {
+        if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showWelcomeScreen) {
+          this.quitToWelcome();
+        }
+      }, 15000);
+      this.setState({ inactivityTimer2: timer2 });
+    }
+  }, 15000);
+  this.setState({ inactivityTimer1: timer1 });
+};
+
+handleUserInteraction = () => {
+  // Ne pas réinitialiser si on est sur l'écran d'accueil
+  if (this.state.showWelcomeScreen) return;
+  if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showInactivityModal) {
+    this.resetInactivityTimers();
+  }
+};
 
   clearInactivityTimers = () => {
     if (this.state.inactivityTimer1) clearTimeout(this.state.inactivityTimer1);
@@ -663,6 +672,14 @@ componentWillUnmount() {
   };
 
 endSession = async () => {
+    // Nettoyer les timers d'inactivité immédiatement
+  this.clearInactivityTimers();
+  
+  if (this.state.paymentInProgress) return;
+  if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
+    alert("Aucune session en cours");
+    return;
+  }
   if (this.state.paymentInProgress) return;
   if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
     alert("Aucune session en cours");
