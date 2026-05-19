@@ -197,71 +197,67 @@ class App extends Component {
       inactivityTimer1: null,
       inactivityTimer2: null,
       sessionPolling: null,
-
     };
   }
 
-componentDidMount() {
-  this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
-  this.loadProducts();
-  this.autoConnectSimulator();
-  this.resetInactivityTimers();
+  componentDidMount() {
+    this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
+    this.loadProducts();
+    this.autoConnectSimulator();
+    this.resetInactivityTimers();
 
-  // Nettoyer l'ancien polling s'il existe
-  if (this.sessionPolling) clearInterval(this.sessionPolling);
-  
-  // Polling toutes les secondes
-  this.sessionPolling = setInterval(() => {
-    // Ne rien faire si pas de session active
-    if (!this.state.sessionActive) return;
-    if (this.state.paymentInProgress) return;
+    // Nettoyer l'ancien polling s'il existe
+    if (this.sessionPolling) clearInterval(this.sessionPolling);
     
-    fetch('http://localhost:5000/is-session-active')
-      .then(res => res.json())
-      .then(data => {
-        if (!data.active) {
-          console.log("🔔 Fin de session détectée");
-          this.endSession();
+    // Polling toutes les secondes avec délai de sécurité
+    this.sessionPolling = setInterval(() => {
+      // Ne rien faire si pas de session active
+      if (!this.state.sessionActive) return;
+      if (this.state.paymentInProgress) return;
+      
+      // ⚠️ Délai de sécurité : ignorer les 3 premières secondes de session
+      if (this.state.sessionStartTime) {
+        const elapsed = (Date.now() - this.state.sessionStartTime) / 1000;
+        if (elapsed < 3) {
+          return;
         }
-      })
-      .catch(err => console.error("Polling erreur:", err));
-  }, 1000);
-}
+      }
+      
+      fetch('http://localhost:5000/is-session-active')
+        .then(res => res.json())
+        .then(data => {
+          if (!data.active) {
+            console.log("🔔 Fin de session détectée");
+            this.endSession();
+          }
+        })
+        .catch(err => console.error("Polling erreur:", err));
+    }, 1000);
+  }
 
-componentWillUnmount() {
-  if (this.timerInterval) clearInterval(this.timerInterval);
-  if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
-  if (this.sessionPolling) clearInterval(this.sessionPolling);
-}
-  
+  componentWillUnmount() {
+    if (this.timerInterval) clearInterval(this.timerInterval);
+    if (this.sessionPolling) clearInterval(this.sessionPolling);
+  }
 
   // ========== GESTION INACTIVITÉ ==========
-resetInactivityTimers = () => {
-  // ❌ Ne pas réinitialiser si la session est active OU si on est sur l'écran d'accueil
-  if (this.state.sessionActive || this.state.paymentInProgress || this.state.showWelcomeScreen) return;
-  this.clearInactivityTimers();
-  
-  const timer1 = setTimeout(() => {
-    if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showWelcomeScreen && !this.state.showInactivityModal) {
-      this.setState({ showInactivityModal: true });
-      const timer2 = setTimeout(() => {
-        if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showWelcomeScreen) {
-          this.quitToWelcome();
-        }
-      }, 15000);
-      this.setState({ inactivityTimer2: timer2 });
-    }
-  }, 15000);
-  this.setState({ inactivityTimer1: timer1 });
-};
-
-handleUserInteraction = () => {
-  // Ne pas réinitialiser si on est sur l'écran d'accueil
-  if (this.state.showWelcomeScreen) return;
-  if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showInactivityModal) {
-    this.resetInactivityTimers();
-  }
-};
+  resetInactivityTimers = () => {
+    if (this.state.sessionActive || this.state.paymentInProgress || this.state.showWelcomeScreen) return;
+    this.clearInactivityTimers();
+    
+    const timer1 = setTimeout(() => {
+      if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showWelcomeScreen && !this.state.showInactivityModal) {
+        this.setState({ showInactivityModal: true });
+        const timer2 = setTimeout(() => {
+          if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showWelcomeScreen) {
+            this.quitToWelcome();
+          }
+        }, 15000);
+        this.setState({ inactivityTimer2: timer2 });
+      }
+    }, 15000);
+    this.setState({ inactivityTimer1: timer1 });
+  };
 
   clearInactivityTimers = () => {
     if (this.state.inactivityTimer1) clearTimeout(this.state.inactivityTimer1);
@@ -285,6 +281,7 @@ handleUserInteraction = () => {
   };
 
   handleUserInteraction = () => {
+    if (this.state.showWelcomeScreen) return;
     if (!this.state.sessionActive && !this.state.paymentInProgress && !this.state.showInactivityModal) {
       this.resetInactivityTimers();
     }
@@ -668,117 +665,112 @@ handleUserInteraction = () => {
     }
   };
 
-endSession = async () => {
+  endSession = async () => {
     // Nettoyer les timers d'inactivité immédiatement
-  this.clearInactivityTimers();
-  
-  if (this.state.paymentInProgress) return;
-  if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
-    alert("Aucune session en cours");
-    return;
-  }
-  if (this.state.paymentInProgress) return;
-  if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
-    alert("Aucune session en cours");
-    return;
-  }
-
-  this.setState({ paymentInProgress: true });
-
-  const elapsedMs = Date.now() - this.state.sessionStartTime;
-  const elapsedMinutes = Math.floor(elapsedMs / 60000);
-  const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
-  let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
-  const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
-  const totalDue = this.state.selectedProduct.price + extraAmount;
-
-  let finalCaptureAmount;
-  let needIncrement = false;
-
-  if (extraMinutes === 0) {
-    finalCaptureAmount = this.state.selectedProduct.price;
-  } else {
-    finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
-    needIncrement = totalDue > this.currentAuthorizedAmount;
-  }
-
-  // Incrémentation adaptative (inchangée)
-  if (needIncrement) {
-    let currentAuth = this.currentAuthorizedAmount;
-    let attempts = 0;
-    const MAX_ATTEMPTS = 10;
-    while (currentAuth < totalDue && attempts < MAX_ATTEMPTS) {
-      const coveredMinutes = currentAuth / this.pricePerMinute;
-      const uncoveredMinutes = Math.max(0, (totalDue / this.pricePerMinute) - coveredMinutes);
-      let stepMinutes;
-      if (uncoveredMinutes <= 5) stepMinutes = 1;
-      else if (uncoveredMinutes <= 15) stepMinutes = 5;
-      else stepMinutes = 10;
-      if (attempts >= 8 && stepMinutes < 5) stepMinutes = 5;
-      const stepCents = Math.ceil(this.pricePerMinute * stepMinutes);
-      const nextAmount = Math.min(totalDue, currentAuth + stepCents);
-      const roundedAmount = Math.ceil(nextAmount);
-      try {
-        const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            paymentIntentId: this.pendingPaymentIntentId,
-            newAmount: roundedAmount
-          })
-        });
-        if (!response.ok) throw new Error((await response.json()).error);
-        currentAuth = roundedAmount;
-      } catch (err) {
-        console.error("Incrémentation refusée", err);
-        break;
-      }
-      attempts++;
-      await new Promise(r => setTimeout(r, 300));
+    this.clearInactivityTimers();
+    
+    if (this.state.paymentInProgress) return;
+    if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
+      alert("Aucune session en cours");
+      return;
     }
-    finalCaptureAmount = Math.min(totalDue, currentAuth);
-  }
 
-  // Construction description (inchangée)
-  const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
-  const extraPrice = ((finalCaptureAmount - this.state.selectedProduct.price) / 100).toFixed(2);
-  const totalPrice = (finalCaptureAmount / 100).toFixed(2);
-  let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
-  if (extraMinutes > 0) description += `\nSupplément : ${extraMinutes} min (${extraPrice} €)`;
-  description += `\nTotal : ${totalPrice} €`;
+    this.setState({ paymentInProgress: true });
 
-  try {
-    // 1. Mettre à jour la description
-    await fetch(`${this.state.backendURL}/update-payment-intent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        paymentIntentId: this.pendingPaymentIntentId,
-        description: description
-      })
-    }).catch(e => console.warn);
+    const elapsedMs = Date.now() - this.state.sessionStartTime;
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
+    const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
+    let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
+    const totalDue = this.state.selectedProduct.price + extraAmount;
 
-    // 2. Capturer le paiement
-    const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        paymentIntentId: this.pendingPaymentIntentId,
-        amountToCapture: finalCaptureAmount
-      })
-    });
-    if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
+    let finalCaptureAmount;
+    let needIncrement = false;
 
-    alert(`✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`);
-    if (this.timerInterval) clearInterval(this.timerInterval);
-    this.resetSession();
-  } catch (err) {
-    console.error("Erreur endSession:", err);
-    alert(`❌ Erreur : ${err.message}`);
-  } finally {
-    this.setState({ paymentInProgress: false });
-  }
-};
+    if (extraMinutes === 0) {
+      finalCaptureAmount = this.state.selectedProduct.price;
+    } else {
+      finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
+      needIncrement = totalDue > this.currentAuthorizedAmount;
+    }
+
+    // Incrémentation adaptative
+    if (needIncrement) {
+      let currentAuth = this.currentAuthorizedAmount;
+      let attempts = 0;
+      const MAX_ATTEMPTS = 10;
+      while (currentAuth < totalDue && attempts < MAX_ATTEMPTS) {
+        const coveredMinutes = currentAuth / this.pricePerMinute;
+        const uncoveredMinutes = Math.max(0, (totalDue / this.pricePerMinute) - coveredMinutes);
+        let stepMinutes;
+        if (uncoveredMinutes <= 5) stepMinutes = 1;
+        else if (uncoveredMinutes <= 15) stepMinutes = 5;
+        else stepMinutes = 10;
+        if (attempts >= 8 && stepMinutes < 5) stepMinutes = 5;
+        const stepCents = Math.ceil(this.pricePerMinute * stepMinutes);
+        const nextAmount = Math.min(totalDue, currentAuth + stepCents);
+        const roundedAmount = Math.ceil(nextAmount);
+        try {
+          const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paymentIntentId: this.pendingPaymentIntentId,
+              newAmount: roundedAmount
+            })
+          });
+          if (!response.ok) throw new Error((await response.json()).error);
+          currentAuth = roundedAmount;
+        } catch (err) {
+          console.error("Incrémentation refusée", err);
+          break;
+        }
+        attempts++;
+        await new Promise(r => setTimeout(r, 300));
+      }
+      finalCaptureAmount = Math.min(totalDue, currentAuth);
+    }
+
+    // Construction description
+    const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
+    const extraPrice = ((finalCaptureAmount - this.state.selectedProduct.price) / 100).toFixed(2);
+    const totalPrice = (finalCaptureAmount / 100).toFixed(2);
+    let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
+    if (extraMinutes > 0) description += `\nSupplément : ${extraMinutes} min (${extraPrice} €)`;
+    description += `\nTotal : ${totalPrice} €`;
+
+    try {
+      // 1. Mettre à jour la description
+      await fetch(`${this.state.backendURL}/update-payment-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentIntentId: this.pendingPaymentIntentId,
+          description: description
+        })
+      }).catch(e => console.warn);
+
+      // 2. Capturer le paiement
+      const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentIntentId: this.pendingPaymentIntentId,
+          amountToCapture: finalCaptureAmount
+        })
+      });
+      if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
+
+      alert(`✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`);
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.resetSession();
+    } catch (err) {
+      console.error("Erreur endSession:", err);
+      alert(`❌ Erreur : ${err.message}`);
+    } finally {
+      this.setState({ paymentInProgress: false });
+    }
+  };
 
   resetSession = () => {
     this.setState({
