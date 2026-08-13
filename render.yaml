@@ -1,0 +1,30 @@
+# ==========================================
+# RENDER.YAML - FRONTEND DEPLOYMENT
+# Repo: https://github.com/infodukwat-debug/stripe-terminal-js-demo
+# ==========================================
+
+services:
+  # ========== FRONTEND REACT ==========
+  - type: web
+    name: stripe-terminal-js-demo
+    env: docker
+    
+    # Docker config
+    dockerfilePath: ./Dockerfile
+    dockerContext: ./
+    
+    # Git config
+    repo: https://github.com/infodukwat-debug/stripe-terminal-js-demo
+    branch: main
+    
+    # Port
+    port: 80
+    
+    # Environment variables
+    envVars:
+      - key: REACT_APP_BACKEND_URL
+        value: https://qnook-backend-unified.onrender.com
+      - key: REACT_APP_STRIPE_PUBLISHABLE_KEY
+        sync: false
+    
+    healthCheckPath: /
