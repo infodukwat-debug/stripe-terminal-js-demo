@@ -1,26 +1,38 @@
-import React from "react";
-import ReactDOM from "react-dom";
-import "./index.css";
-import App from "./MainPage";
-import * as serviceWorker from "./serviceWorker";
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import MainPage from './MainPage';
 
-import { injectGlobal } from "emotion";
-
-injectGlobal({
-  html: {
-    height: "100%",
-    width: "100%"
-  },
-  body: {
-    height: "100%",
-    width: "100%",
-    background: "#E3E8EE"
+// Global styles
+const globalStyles = `
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
   }
-});
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    background-color: #1a1a2e;
+    color: #333;
+    width: 100%;
+    height: 100%;
+  }
+  
+  #root {
+    width: 100vw;
+    height: 100vh;
+  }
+`;
 
-ReactDOM.render(<App />, document.getElementById("root"));
+// Inject styles
+const styleSheet = document.createElement('style');
+styleSheet.textContent = globalStyles;
+document.head.appendChild(styleSheet);
 
-// If you want your app to work offline and load faster, you can change
-// unregister() to register() below. Note this comes with some pitfalls.
-// Learn more about service workers: http://bit.ly/CRA-PWA
-serviceWorker.unregister();
+// Render app
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <React.StrictMode>
+    <MainPage />
+  </React.StrictMode>
+);
