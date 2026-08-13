@@ -52,6 +52,12 @@ const initialState = {
 
 function sessionReducer(state, action) {
   switch (action.type) {
+    case 'GO_TO_PRODUCTS':
+      return {
+        ...state,
+        screen: 'products'
+      };
+    
     case 'SELECT_PRODUCT':
       return {
         ...state,
@@ -476,9 +482,9 @@ function MainPage() {
       <div style={styles.welcome}>
         <h1>🛋️ Qnook</h1>
         <p>Bienvenue chez Qnook</p>
-        <p style={{ color: '#aaa', marginTop: '40px' }}>Touchez l'écran pour commencer</p>
+        <p style={{ color: '#aaa', marginTop: '40px' }}>Touchez l\'écran pour commencer</p>
         <button
-          onClick={() => dispatch({ type: 'SELECT_PRODUCT', payload: null })}
+          onClick={() => dispatch({ type: 'GO_TO_PRODUCTS' })}
           style={{ ...styles.button, marginTop: '50px' }}
         >
           Commencer
