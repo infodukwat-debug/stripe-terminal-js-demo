@@ -15,7 +15,7 @@
 import React, { useReducer, useEffect, useRef, useCallback, useState } from 'react';
 import './MainPage.css';
 
-const DEFAULT_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'https://qnook-backend.onrender.com';
+const DEFAULT_BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'https://qnook-backend-unified.onrender.com';
 const AGENT_URL = 'http://localhost:5000';
 const TIMEOUT_MS = 5000;
 const MAX_RETRIES = 3;
