@@ -2,11 +2,10 @@
 # RENDER.YAML - FRONTEND DEPLOYMENT
 # Repo: https://github.com/infodukwat-debug/stripe-terminal-js-demo
 # ==========================================
-
 services:
   # ========== FRONTEND REACT ==========
   - type: web
-    name: stripe-terminal-js-demo
+    name: stripe-terminal-js-demo-2
     env: docker
     
     # Docker config
