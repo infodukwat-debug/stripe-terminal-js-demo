@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { breakpoints } from "../../styles.jsx";
-import { css } from "@emotion/css";
+import { css } from "@emotion/react";
 
 class Group extends React.Component {
   getMarginType = direction => {
