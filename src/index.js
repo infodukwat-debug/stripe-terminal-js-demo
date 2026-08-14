@@ -1,5 +1,6 @@
 import React from 'react';
-import ReactDOM from 'react-dom/client';
+// ✅ CORRECTION ICI : importer le module nommé createRoot, pas ReactDOM
+import { createRoot } from 'react-dom/client'; 
 import MainPage from './MainPage';
 
 // Global styles
@@ -30,7 +31,8 @@ styleSheet.textContent = globalStyles;
 document.head.appendChild(styleSheet);
 
 // Render app
-const root = ReactDOM.createRoot(document.getElementById('root'));
+// ✅ On utilise directement createRoot sans passer par ReactDOM
+const root = createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     <MainPage />
