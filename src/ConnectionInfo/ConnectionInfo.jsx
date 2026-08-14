@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { css } from "emotion";
+import { css } from "@emotion/react";
 
 import Button from "../components/Button/Button.jsx";
 import Group from "../components/Group/Group.jsx";
