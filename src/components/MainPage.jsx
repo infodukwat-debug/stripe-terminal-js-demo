@@ -12,7 +12,7 @@ import Readers from "../Forms/Readers.jsx";
 import Group from "./Group/Group.jsx";
 import Logs from "../Logs/Logs.jsx";
 
-import { css } from "emotion";
+import { css } from "@emotion/react";
 
 const DEFAULT_BACKEND_URL = 'https://qnook-backend-unified.onrender.com';
 const EXTRA_MINUTE_PRICE = 50; // 0,5 € par minute supplémentaire
