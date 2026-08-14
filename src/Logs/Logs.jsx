@@ -1,7 +1,7 @@
 //@flow
 
 import * as React from "react";
-import { css } from "emotion";
+import { css } from "@emotion/react";
 import "./Logs.css";
 import { CSSTransition, TransitionGroup } from "react-transition-group";
 import Button from "../components/Button/Button.jsx";
