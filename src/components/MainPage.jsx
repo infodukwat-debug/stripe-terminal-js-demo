@@ -482,7 +482,7 @@ function MainPage() {
       <div style={styles.welcome}>
         <h1>🛋️ Qnook</h1>
         <p>Bienvenue chez Qnook</p>
-        <p style={{ color: '#aaa', marginTop: '40px' }}>Touchez l\'écran pour commencer</p>
+        <p style={{ color: '#aaa', marginTop: '40px' }}>Touchez l'écran pour commencer</p>
         <button
           onClick={() => dispatch({ type: 'GO_TO_PRODUCTS' })}
           style={{ ...styles.button, marginTop: '50px' }}
