@@ -215,6 +215,8 @@ componentDidMount() {
     
     console.log("[Polling] Vérification...");
     
+    // ⚠️ ATTENTION : En production, remplacez 'http://localhost:5000' par l'URL de votre backend !
+    // Exemple : `${this.state.backendURL}/is-session-active`
     fetch('http://localhost:5000/is-session-active')
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -292,6 +294,7 @@ componentWillUnmount() {
   };
   // ========== FIN GESTION INACTIVITÉ ==========
 
+  // ✅ CORRECTION ICI : Gestion de l'AbortError pour le chargement des produits
   loadProducts = async () => {
     const { backendURL } = this.state;
     if (!backendURL) return;
@@ -301,6 +304,11 @@ componentWillUnmount() {
       const data = await response.json();
       this.setState({ products: data });
     } catch (err) {
+      // Ignorer silencieusement les AbortError (changement de page)
+      if (err.name === 'AbortError') {
+        console.warn("Chargement des produits annulé");
+        return;
+      }
       console.error("Erreur chargement produits:", err);
     }
   };
@@ -399,9 +407,21 @@ componentWillUnmount() {
 
   cancelDiscoverReaders = () => this.setState({ discoveryWasCancelled: true });
 
+  // ✅ CORRECTION ICI : Gestion de l'AbortError pour la connexion au simulateur
   connectToSimulator = async () => {
-    const simulatedResult = await this.terminal.discoverReaders({ simulated: true });
-    await this.connectToReader(simulatedResult.discoveredReaders[0]);
+    try {
+      const simulatedResult = await this.terminal.discoverReaders({ simulated: true });
+      if (simulatedResult.discoveredReaders && simulatedResult.discoveredReaders.length > 0) {
+        await this.connectToReader(simulatedResult.discoveredReaders[0]);
+      }
+    } catch (err) {
+      // Ignorer silencieusement les AbortError
+      if (err.name === 'AbortError') {
+        console.warn("Connexion au simulateur annulée.");
+        return;
+      }
+      console.error("Erreur connexion au simulateur:", err);
+    }
   };
 
   connectToReader = async selectedReader => {
@@ -533,6 +553,7 @@ componentWillUnmount() {
 
       // Ouverture de la serrure (appel local)
       try {
+        // ⚠️ ATTENTION : Remplacez aussi 'http://localhost:5000' par l'URL de votre backend en prod !
         await fetch('http://localhost:5000/ouvrir', { method: 'POST' });
         console.log("✅ Serrure ouverte");
       } catch (err) {
