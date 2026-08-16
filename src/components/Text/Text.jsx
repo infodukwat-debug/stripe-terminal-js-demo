@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { css } from "emotion";
+import { css } from "@emotion/react";
 
 class Text extends React.Component {
   getColor = color => {
