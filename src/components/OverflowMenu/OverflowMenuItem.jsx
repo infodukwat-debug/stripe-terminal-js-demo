@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { css } from "emotion";
+import { css } from "@emotion/react";
 import Text from "../Text/Text.jsx";
 
 class OverflowMenuItem extends React.Component {
