@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { css } from "emotion";
+import { css } from "@emotion/react";
 import onClickOutside from "react-onclickoutside";
 
 class OverflowMenu extends React.Component {
