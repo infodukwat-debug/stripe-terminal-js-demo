@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import Text from "../Text/Text.jsx";
-import { css } from "emotion";
+import { css } from "@emotion/react";
 
 class Link extends React.Component {
   render() {
