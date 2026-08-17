@@ -10,6 +10,9 @@ class App extends Component {
       showEmailForm: false,
       selectedProduct: null,
       products: [],
+      wantReceipt: false,
+      customerEmail: "",
+      wantReminder: false,
     };
   }
 
@@ -46,7 +49,10 @@ class App extends Component {
     this.setState({ 
       selectedProduct: product,
       showEmailForm: true,
-      showProductSelection: false
+      showProductSelection: false,
+      wantReceipt: false,
+      wantReminder: false,
+      customerEmail: "",
     });
   };
 
@@ -58,13 +64,38 @@ class App extends Component {
     });
   };
 
+  handleEmailChange = (e) => {
+    this.setState({ customerEmail: e.target.value });
+  };
+
+  handleWantReceiptChange = (e) => {
+    this.setState({ wantReceipt: e.target.checked });
+  };
+
+  handleWantReminderChange = (e) => {
+    this.setState({ wantReminder: e.target.checked });
+  };
+
   handleEmailFormSubmit = () => {
+    const { wantReceipt, wantReminder, customerEmail, selectedProduct } = this.state;
+    
+    // Validation
+    if ((wantReceipt || wantReminder) && !customerEmail) {
+      alert("Veuillez saisir une adresse email.");
+      return;
+    }
+
+    // Démarrer la session
+    console.log("Session démarrée pour:", selectedProduct);
+    console.log("Email:", customerEmail);
+    console.log("Reçu:", wantReceipt);
+    console.log("Rappel:", wantReminder);
+    
     // TODO: Traiter le paiement
-    console.log("Paiement pour:", this.state.selectedProduct);
   };
 
   render() {
-    const { readerStatus, showProductSelection, showEmailForm, selectedProduct, products } = this.state;
+    const { readerStatus, showProductSelection, showEmailForm, selectedProduct, products, wantReceipt, wantReminder, customerEmail } = this.state;
 
     // Écran de chargement
     if (readerStatus === "initializing") {
@@ -93,6 +124,8 @@ class App extends Component {
 
     // Écran de formulaire email
     if (showEmailForm && selectedProduct) {
+      const chosenMinutes = parseInt(selectedProduct.name.split(' ')[0]);
+      
       return (
         <div style={{
           width: "100vw",
@@ -110,21 +143,40 @@ class App extends Component {
             maxWidth: "500px",
             width: "100%",
             boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
+            maxHeight: "calc(100vh - 48px)",
+            overflowY: "auto",
           }}>
-            <h2 style={{ marginBottom: "24px", color: "#1A1A2E" }}>
-              Options de la session
+            <h2 style={{ marginBottom: "24px", color: "#1A1A2E", fontSize: "1.5rem", fontWeight: "700" }}>
+              ⚙️ Options de la session
             </h2>
 
             <p style={{
               marginBottom: "24px",
               color: "#6B7280",
+              fontSize: "0.95rem",
             }}>
               Vous avez choisi : <strong>{selectedProduct.name}</strong>
               <br />
-              <strong style={{ color: "#0066FF" }}>
+              <strong style={{ color: "#0066FF", fontSize: "1.1rem" }}>
                 {(selectedProduct.price / 100).toFixed(2)} EUR
               </strong>
             </p>
+
+            <div style={{
+              background: "#F0F4FF",
+              padding: "16px",
+              borderRadius: "8px",
+              marginBottom: "24px",
+              fontSize: "0.9rem",
+              color: "#0066FF",
+            }}>
+              <strong>ℹ️ Comment ça fonctionne</strong>
+              <ul style={{ margin: "8px 0 0 0", paddingLeft: "20px" }}>
+                <li>Pré-autorisation (×2) – aucun débit immédiat</li>
+                <li>Temps supplémentaire : <strong>0,50 €/min</strong></li>
+                <li>Vous ne payez que le temps réel</li>
+              </ul>
+            </div>
 
             <div style={{ marginBottom: "24px" }}>
               <label style={{
@@ -133,10 +185,63 @@ class App extends Component {
                 gap: "12px",
                 cursor: "pointer",
               }}>
-                <input type="checkbox" />
-                Recevoir le reçu par email
+                <input 
+                  type="checkbox" 
+                  checked={wantReceipt}
+                  onChange={this.handleWantReceiptChange}
+                  style={{ cursor: "pointer" }}
+                />
+                <span style={{ color: "#1A1A2E" }}>Recevoir le reçu par email</span>
               </label>
             </div>
+
+            {chosenMinutes > 5 && (
+              <div style={{ marginBottom: "24px" }}>
+                <label style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  cursor: "pointer",
+                }}>
+                  <input 
+                    type="checkbox" 
+                    checked={wantReminder}
+                    onChange={this.handleWantReminderChange}
+                    style={{ cursor: "pointer" }}
+                  />
+                  <span style={{ color: "#1A1A2E" }}>Recevoir un rappel 5 min avant la fin</span>
+                </label>
+              </div>
+            )}
+
+            {(wantReceipt || wantReminder) && (
+              <div style={{ marginBottom: "24px" }}>
+                <label style={{
+                  display: "block",
+                  fontWeight: "600",
+                  marginBottom: "8px",
+                  color: "#1A1A2E",
+                  fontSize: "0.95rem",
+                }}>
+                  📧 Email :
+                </label>
+                <input 
+                  type="email" 
+                  value={customerEmail}
+                  onChange={this.handleEmailChange}
+                  placeholder="votre.email@example.com"
+                  style={{
+                    width: "100%",
+                    padding: "12px",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "8px",
+                    fontSize: "1rem",
+                    boxSizing: "border-box",
+                    fontFamily: "inherit",
+                  }}
+                />
+              </div>
+            )}
 
             <div style={{
               display: "flex",
@@ -148,6 +253,7 @@ class App extends Component {
                 onClick={this.handleEmailFormSubmit}
                 style={{
                   flex: 1,
+                  minWidth: "140px",
                   padding: "16px",
                   backgroundColor: "#0066FF",
                   color: "white",
@@ -167,12 +273,13 @@ class App extends Component {
                   e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
-                Démarrer la session
+                🚀 Démarrer la session
               </button>
               <button 
                 onClick={this.handleEmailFormCancel}
                 style={{
                   flex: 1,
+                  minWidth: "140px",
                   padding: "16px",
                   backgroundColor: "#E5E7EB",
                   color: "#1A1A2E",
@@ -190,7 +297,7 @@ class App extends Component {
                   e.currentTarget.style.backgroundColor = "#E5E7EB";
                 }}
               >
-                Annuler
+                ❌ Annuler
               </button>
             </div>
           </div>
