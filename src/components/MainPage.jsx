@@ -1,18 +1,17 @@
 import React, { Component } from "react";
+import { css } from "@emotion/react";
 
 import Client from "../client";
 import Logger from "../logger";
 
-import BackendURLForm from "../Forms/BackendURLForm.jsx";
-import CommonWorkflows from "../Forms/CommonWorkflows.jsx";
-import RefundForm from "../Forms/RefundForm.jsx";
-import CartForm from "../Forms/CartForm.jsx";
-import ConnectionInfo from "../ConnectionInfo/ConnectionInfo.jsx";
-import Readers from "../Forms/Readers.jsx";
-import Group from "./Group/Group.jsx";
-
-
-import { css } from "@emotion/react";
+import { colors, gradients, spacing, transitions, shadows } from "../styles/colors";
+import { WelcomeScreen } from "./WelcomeScreen";
+import { LoadingScreen } from "./LoadingScreen";
+import { ErrorScreen } from "./ErrorScreen";
+import { Button } from "./Button";
+import { Card, InfoBox, AlertBox, Badge } from "./Card";
+import { ProductGrid } from "./ProductGrid";
+import { SessionScreen } from "./SessionScreen";
 
 const DEFAULT_BACKEND_URL = 'https://qnook-backend-unified.onrender.com';
 const EXTRA_MINUTE_PRICE = 50;
@@ -55,94 +54,110 @@ class SimpleKeyboard extends React.Component {
     ];
 
     return (
-      <div style={{ 
-        position: 'fixed', 
-        bottom: 0, 
-        left: 0, 
-        right: 0, 
-        background: '#f0f0f0', 
-        padding: '4px', 
-        borderTop: '1px solid #ccc', 
-        zIndex: 1000,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center'
-      }}>
+      <div css={css`
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: ${colors.light};
+        padding: ${spacing.sm};
+        border-top: 1px solid ${colors.border};
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      `}>
         {keys.map((row, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'center', marginBottom: '2px' }}>
+          <div key={i} css={css`
+            display: flex;
+            justify-content: center;
+            margin-bottom: ${spacing.xs};
+          `}>
             {row.map(key => (
               <button
                 key={key}
                 onClick={() => this.handleKeyPress(key)}
-                style={{
-                  width: key === '{enter}' ? '60px' : (key === '{bksp}' ? '60px' : '40px'),
-                  height: '36px',
-                  margin: '1px',
-                  fontSize: '0.9rem',
-                  background: '#fff',
-                  border: '1px solid #aaa',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
+                css={css`
+                  width: ${key === '{enter}' ? '60px' : (key === '{bksp}' ? '60px' : '40px')};
+                  height: 36px;
+                  margin: 1px;
+                  font-size: 0.9rem;
+                  background: ${colors.white};
+                  border: 1px solid ${colors.border};
+                  border-radius: 4px;
+                  cursor: pointer;
+                  transition: all ${transitions.fast};
+                  
+                  &:hover {
+                    background: ${colors.light};
+                    border-color: ${colors.primary};
+                  }
+                  
+                  &:active {
+                    background: ${colors.primaryLight};
+                  }
+                `}
               >
                 {key === '{enter}' ? '⏎' : (key === '{bksp}' ? '⌫' : key)}
               </button>
             ))}
           </div>
         ))}
-        <button 
+        <Button 
+          variant="danger"
+          size="small"
           onClick={() => this.props.onClose && this.props.onClose()}
-          style={{ 
-            width: '80px', 
-            height: '30px', 
-            margin: '4px 0',
-            background: '#dc3545', 
-            color: 'white', 
-            border: 'none', 
-            borderRadius: '4px',
-            fontSize: '0.8rem',
-            cursor: 'pointer'
-          }}
+          css={css`margin-top: ${spacing.sm};`}
         >
           Fermer
-        </button>
+        </Button>
       </div>
     );
   }
 }
 
 const InactivityModal = ({ onContinue, onQuit }) => (
-  <div style={{
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2000
-  }}>
-    <div style={{
-      backgroundColor: 'white',
-      padding: '30px',
-      borderRadius: '10px',
-      textAlign: 'center',
-      maxWidth: '400px',
-      boxShadow: '0 0 20px rgba(0,0,0,0.3)'
-    }}>
-      <h3>⚠️ Inactivité détectée</h3>
-      <p>Souhaitez-vous continuer votre sélection ?</p>
-      <div style={{ marginTop: '20px' }}>
-        <button onClick={onContinue} style={{ marginRight: '15px', padding: '8px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-          Oui, continuer
-        </button>
-        <button onClick={onQuit} style={{ padding: '8px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-          Non, quitter
-        </button>
+  <div css={css`
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+  `}>
+    <Card variant="bordered" css={css`
+      max-width: 400px;
+      text-align: center;
+    `}>
+      <h3 css={css`
+        font-size: 1.5rem;
+        margin-bottom: ${spacing.lg};
+      `}>
+        ⚠️ Inactivité détectée
+      </h3>
+      <p css={css`
+        color: ${colors.textSecondary};
+        margin-bottom: ${spacing.lg};
+      `}>
+        Souhaitez-vous continuer votre sélection ?
+      </p>
+      <div css={css`
+        display: flex;
+        gap: ${spacing.md};
+        justify-content: center;
+      `}>
+        <Button variant="success" onClick={onContinue}>
+          ✅ Oui, continuer
+        </Button>
+        <Button variant="danger" onClick={onQuit}>
+          ❌ Non, quitter
+        </Button>
       </div>
-    </div>
+    </Card>
   </div>
 );
 
@@ -199,40 +214,39 @@ class App extends Component {
     };
   }
 
-componentDidMount() {
-  this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
-  this.loadProducts();
-  
-  // Attendre 2 secondes que Stripe Terminal JS soit chargé
-  setTimeout(() => {
-    this.autoConnectSimulator();
-  }, 2000);
-  
-  this.resetInactivityTimers();
-
-  this.sessionPolling = setInterval(() => {
-    if (!this.state.sessionActive) return;
-    if (this.state.paymentInProgress) return;
+  componentDidMount() {
+    this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
+    this.loadProducts();
     
-    fetch('http://localhost:5000/is-session-active')
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(data => {
-        if (!data.active) {
-          this.endSession();
-        }
-      })
-      .catch(err => console.error("[Polling] Erreur:", err));
-  }, 2000);
-}
+    setTimeout(() => {
+      this.autoConnectSimulator();
+    }, 2000);
+    
+    this.resetInactivityTimers();
 
-componentWillUnmount() {
-  if (this.timerInterval) clearInterval(this.timerInterval);
-  if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
-  if (this.sessionPolling) clearInterval(this.sessionPolling);
-}
+    this.sessionPolling = setInterval(() => {
+      if (!this.state.sessionActive) return;
+      if (this.state.paymentInProgress) return;
+      
+      fetch('http://localhost:5000/is-session-active')
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then(data => {
+          if (!data.active) {
+            this.endSession();
+          }
+        })
+        .catch(err => console.error("[Polling] Erreur:", err));
+    }, 2000);
+  }
+
+  componentWillUnmount() {
+    if (this.timerInterval) clearInterval(this.timerInterval);
+    if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
+    if (this.sessionPolling) clearInterval(this.sessionPolling);
+  }
 
   resetInactivityTimers = () => {
     if (this.state.sessionActive || this.state.paymentInProgress) return;
@@ -701,105 +715,105 @@ componentWillUnmount() {
     }
   };
 
-endSession = async () => {
-  if (this.state.paymentInProgress) return;
-  if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
-    alert("Aucune session en cours");
-    return;
-  }
-
-  this.setState({ paymentInProgress: true });
-
-  const elapsedMs = Date.now() - this.state.sessionStartTime;
-  const elapsedMinutes = Math.floor(elapsedMs / 60000);
-  const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
-  let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
-  const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
-  const totalDue = this.state.selectedProduct.price + extraAmount;
-
-  let finalCaptureAmount;
-  let needIncrement = false;
-
-  if (extraMinutes === 0) {
-    finalCaptureAmount = this.state.selectedProduct.price;
-  } else {
-    finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
-    needIncrement = totalDue > this.currentAuthorizedAmount;
-  }
-
-  if (needIncrement) {
-    let currentAuth = this.currentAuthorizedAmount;
-    let attempts = 0;
-    const MAX_ATTEMPTS = 10;
-    while (currentAuth < totalDue && attempts < MAX_ATTEMPTS) {
-      const coveredMinutes = currentAuth / this.pricePerMinute;
-      const uncoveredMinutes = Math.max(0, (totalDue / this.pricePerMinute) - coveredMinutes);
-      let stepMinutes;
-      if (uncoveredMinutes <= 5) stepMinutes = 1;
-      else if (uncoveredMinutes <= 15) stepMinutes = 5;
-      else stepMinutes = 10;
-      if (attempts >= 8 && stepMinutes < 5) stepMinutes = 5;
-      const stepCents = Math.ceil(this.pricePerMinute * stepMinutes);
-      const nextAmount = Math.min(totalDue, currentAuth + stepCents);
-      const roundedAmount = Math.ceil(nextAmount);
-      try {
-        const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            paymentIntentId: this.pendingPaymentIntentId,
-            newAmount: roundedAmount
-          })
-        });
-        if (!response.ok) throw new Error((await response.json()).error);
-        currentAuth = roundedAmount;
-      } catch (err) {
-        console.error("Incrémentation refusée", err);
-        break;
-      }
-      attempts++;
-      await new Promise(r => setTimeout(r, 300));
+  endSession = async () => {
+    if (this.state.paymentInProgress) return;
+    if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
+      alert("Aucune session en cours");
+      return;
     }
-    finalCaptureAmount = Math.min(totalDue, currentAuth);
-  }
 
-  const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
-  const extraPrice = ((finalCaptureAmount - this.state.selectedProduct.price) / 100).toFixed(2);
-  const totalPrice = (finalCaptureAmount / 100).toFixed(2);
-  let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
-  if (extraMinutes > 0) description += `\nSupplément : ${extraMinutes} min (${extraPrice} €)`;
-  description += `\nTotal : ${totalPrice} €`;
+    this.setState({ paymentInProgress: true });
 
-  try {
-    await fetch(`${this.state.backendURL}/update-payment-intent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        paymentIntentId: this.pendingPaymentIntentId,
-        description: description
-      })
-    }).catch(e => console.warn);
+    const elapsedMs = Date.now() - this.state.sessionStartTime;
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
+    const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
+    let extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
+    const totalDue = this.state.selectedProduct.price + extraAmount;
 
-    const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        paymentIntentId: this.pendingPaymentIntentId,
-        amountToCapture: finalCaptureAmount
-      })
-    });
-    if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
+    let finalCaptureAmount;
+    let needIncrement = false;
 
-    alert(`✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`);
-    if (this.timerInterval) clearInterval(this.timerInterval);
-    this.resetSession();
-  } catch (err) {
-    console.error("Erreur endSession:", err);
-    alert(`❌ Erreur : ${err.message}`);
-  } finally {
-    this.setState({ paymentInProgress: false });
-  }
-};
+    if (extraMinutes === 0) {
+      finalCaptureAmount = this.state.selectedProduct.price;
+    } else {
+      finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
+      needIncrement = totalDue > this.currentAuthorizedAmount;
+    }
+
+    if (needIncrement) {
+      let currentAuth = this.currentAuthorizedAmount;
+      let attempts = 0;
+      const MAX_ATTEMPTS = 10;
+      while (currentAuth < totalDue && attempts < MAX_ATTEMPTS) {
+        const coveredMinutes = currentAuth / this.pricePerMinute;
+        const uncoveredMinutes = Math.max(0, (totalDue / this.pricePerMinute) - coveredMinutes);
+        let stepMinutes;
+        if (uncoveredMinutes <= 5) stepMinutes = 1;
+        else if (uncoveredMinutes <= 15) stepMinutes = 5;
+        else stepMinutes = 10;
+        if (attempts >= 8 && stepMinutes < 5) stepMinutes = 5;
+        const stepCents = Math.ceil(this.pricePerMinute * stepMinutes);
+        const nextAmount = Math.min(totalDue, currentAuth + stepCents);
+        const roundedAmount = Math.ceil(nextAmount);
+        try {
+          const response = await fetch(`${this.state.backendURL}/increment-authorization`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              paymentIntentId: this.pendingPaymentIntentId,
+              newAmount: roundedAmount
+            })
+          });
+          if (!response.ok) throw new Error((await response.json()).error);
+          currentAuth = roundedAmount;
+        } catch (err) {
+          console.error("Incrémentation refusée", err);
+          break;
+        }
+        attempts++;
+        await new Promise(r => setTimeout(r, 300));
+      }
+      finalCaptureAmount = Math.min(totalDue, currentAuth);
+    }
+
+    const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
+    const extraPrice = ((finalCaptureAmount - this.state.selectedProduct.price) / 100).toFixed(2);
+    const totalPrice = (finalCaptureAmount / 100).toFixed(2);
+    let description = `Produit : ${chosenMinutes} min (${productPrice} €)`;
+    if (extraMinutes > 0) description += `\nSupplément : ${extraMinutes} min (${extraPrice} €)`;
+    description += `\nTotal : ${totalPrice} €`;
+
+    try {
+      await fetch(`${this.state.backendURL}/update-payment-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentIntentId: this.pendingPaymentIntentId,
+          description: description
+        })
+      }).catch(e => console.warn);
+
+      const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentIntentId: this.pendingPaymentIntentId,
+          amountToCapture: finalCaptureAmount
+        })
+      });
+      if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
+
+      alert(`✅ Paiement réussi !\n📆 Temps réel : ${elapsedMinutes} min\n💰 Montant facturé : ${(finalCaptureAmount/100).toFixed(2)} €`);
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.resetSession();
+    } catch (err) {
+      console.error("Erreur endSession:", err);
+      alert(`❌ Erreur : ${err.message}`);
+    } finally {
+      this.setState({ paymentInProgress: false });
+    }
+  };
 
   resetSession = () => {
     this.setState({
@@ -886,32 +900,8 @@ endSession = async () => {
   onChangeTipAmount = tipAmount => this.setState({ tipAmount });
   onChangeSimulateOnReaderTip = simulateOnReaderTip => this.setState({ simulateOnReaderTip });
 
-  renderPrice(product) {
-    if (product.promo && product.promo.type === "percent") {
-      const finalPrice = product.price * (1 - product.promo.value / 100);
-      return (
-        <span>
-          <span style={{ textDecoration: 'line-through', fontSize: '0.8rem' }}>{(product.price / 100).toFixed(2)} €</span>
-          {' '}
-          <span style={{ color: 'red', fontWeight: 'bold' }}>{(finalPrice / 100).toFixed(2)} €</span>
-        </span>
-      );
-    } else if (product.promo && product.promo.type === "fixed") {
-      const finalPrice = Math.max(0, product.price - product.promo.value);
-      return (
-        <span>
-          <span style={{ textDecoration: 'line-through', fontSize: '0.8rem' }}>{(product.price / 100).toFixed(2)} €</span>
-          {' '}
-          <span style={{ color: 'red', fontWeight: 'bold' }}>{(finalPrice / 100).toFixed(2)} €</span>
-        </span>
-      );
-    }
-    return <span>{(product.price / 100).toFixed(2)} €</span>;
-  }
-
   renderForm() {
     const {
-      backendURL,
       showWelcomeScreen,
       showProductSelection,
       showEmailForm,
@@ -921,247 +911,253 @@ endSession = async () => {
       wantReceipt,
       wantReminder,
       customerEmail,
-      selectedTestCard,
       sessionActive,
       paymentInProgress,
       reader,
-      discoveredReaders,
       showKeyboard,
       showInactivityModal,
       readerStatus,
       readerError,
+      sessionStartTime,
     } = this.state;
 
+    // Modal inactivité
     if (showInactivityModal) {
       return <InactivityModal onContinue={this.handleContinueSession} onQuit={this.handleQuitSession} />;
     }
 
-    // Écran de chargement du lecteur
+    // Écran de chargement
     if (readerStatus === "initializing") {
-      return (
-        <div style={{
-          width: '100vw',
-          height: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-          backgroundColor: '#1a1a2e',
-          color: 'white',
-          textAlign: 'center',
-        }}>
-          <h2>🔄 Connexion au lecteur...</h2>
-          <p>Veuillez patienter...</p>
-        </div>
-      );
+      return <LoadingScreen 
+        message="🔄 Connexion au lecteur..." 
+        submessage="Veuillez patienter..."
+      />;
     }
 
-    // Écran d'erreur du lecteur
+    // Écran d'erreur
     if (readerStatus === "error") {
-      return (
-        <div style={{
-          width: '100vw',
-          height: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-          backgroundColor: '#1a1a2e',
-          color: 'white',
-          textAlign: 'center',
-        }}>
-          <h2>❌ Erreur de connexion</h2>
-          <p>{readerError}</p>
-          <button
-            onClick={() => this.autoConnectSimulator()}
-            style={{
-              marginTop: '20px',
-              padding: '10px 20px',
-              background: '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              fontSize: '1rem'
-            }}
-          >
-            🔄 Réessayer
-          </button>
-        </div>
-      );
+      return <ErrorScreen 
+        title="❌ Erreur de connexion"
+        message={readerError}
+        onRetry={() => this.autoConnectSimulator()}
+      />;
     }
 
+    // Écran d'accueil
     if (showWelcomeScreen) {
       return (
-        <div
-          onClick={this.handleScreenTouch}
-          style={{
-            width: '100vw',
-            height: '100vh',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            backgroundColor: '#1a1a2e',
-            color: 'white',
-            cursor: 'pointer',
-            textAlign: 'center',
-            padding: '20px',
-          }}
-        >
-          <h1 style={{ fontSize: '4rem', marginBottom: '20px' }}>🛋️ Qnook</h1>
-          <p style={{ fontSize: '1.5rem' }}>Bienvenue chez Qnook</p>
-          <p style={{ fontSize: '1rem', marginTop: '40px', color: '#aaa' }}>Touchez l'écran pour commencer</p>
-          {readerStatus === "connected" && (
-            <p style={{ fontSize: '0.8rem', marginTop: '20px', color: '#28a745' }}>✅ Lecteur connecté</p>
-          )}
-        </div>
+        <WelcomeScreen 
+          onTouch={this.handleScreenTouch}
+          readerStatus={readerStatus}
+          showBadge={true}
+        />
       );
     }
 
-    if (showProductSelection && backendURL && reader && !sessionActive && !showEmailForm) {
-      if (products.length === 0) return <div>Chargement des produits...</div>;
+    // Sélection produits
+    if (showProductSelection && reader && !sessionActive && !showEmailForm) {
+      if (products.length === 0) {
+        return <LoadingScreen message="📦 Chargement des produits..." />;
+      }
       return (
-        <div style={{ padding: '20px', textAlign: 'center' }}>
-          <h2 style={{ marginBottom: '10px' }}>Choisissez votre durée</h2>
-          <p style={{ marginBottom: '30px', color: '#555' }}>Touchez la durée qui vous convient</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'center' }}>
-            {products.map(product => (
-              <button
-                key={product.id}
-                onClick={() => this.selectProduct(product)}
-                style={{
-                  width: '150px',
-                  padding: '20px',
-                  fontSize: '1.2rem',
-                  background: '#f0f0f0',
-                  border: '1px solid #ccc',
-                  borderRadius: '10px',
-                  cursor: 'pointer',
-                  textAlign: 'center',
-                }}
-              >
-                <div style={{ fontSize: '3rem' }}>{product.image || '🕐'}</div>
-                <div>{product.name}</div>
-                <div>{this.renderPrice(product)}</div>
-              </button>
-            ))}
-          </div>
+        <div css={css`
+          background-color: ${colors.light};
+          min-height: 100vh;
+          padding: ${spacing.xl} 0;
+        `}>
+          <ProductGrid 
+            products={products}
+            onSelectProduct={this.selectProduct}
+          />
         </div>
       );
     }
 
+    // Formulaire email
     if (showEmailForm && !emailSubmitted) {
       return (
-        <div style={{ 
-          maxWidth: '500px', 
-          margin: '20px auto', 
-          padding: '15px', 
-          border: '1px solid #ccc', 
-          borderRadius: '10px', 
-          textAlign: 'center',
-          maxHeight: 'calc(100vh - 200px)',
-          overflowY: 'auto',
-          paddingBottom: '20px'
-        }}>
-          <h2>Options de la session</h2>
-          <p>Vous avez choisi : <strong>{selectedProduct?.name} ({this.renderPrice(selectedProduct)})</strong></p>
-          
-          <div style={{ 
-            backgroundColor: '#e8f0fe', 
-            padding: '8px', 
-            borderRadius: '8px', 
-            marginBottom: '15px',
-            fontSize: '0.85rem',
-            textAlign: 'left'
-          }}>
-            <p style={{ margin: '0 0 5px 0' }}><strong>ℹ️ Comment ça fonctionne :</strong></p>
-            <p style={{ margin: '0 0 3px 0' }}>• Pré-autorisation (×2) – aucun débit immédiat</p>
-            <p style={{ margin: '0 0 3px 0' }}>• Temps supplémentaire : <strong>0,50 €/min</strong></p>
-            <p style={{ margin: '0' }}>• Vous ne payez que le temps réel</p>
-          </div>
-          
-          <div style={{ marginBottom: '10px' }}>
-            <label><input type="checkbox" checked={wantReceipt} onChange={this.handleWantReceiptChange} /> Recevoir le reçu par email</label>
-          </div>
-          {selectedProduct && parseInt(selectedProduct.name.split(' ')[0]) > 5 && (
-            <div style={{ marginBottom: '10px' }}>
-              <label><input type="checkbox" checked={wantReminder} onChange={this.handleWantReminderChange} /> Recevoir un rappel 5 min avant la fin</label>
+        <div css={css`
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background-color: ${colors.light};
+          padding: ${spacing.lg};
+        `}>
+          <Card variant="default" css={css`
+            max-width: 500px;
+            width: 100%;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+          `}>
+            <h2 css={css`margin-bottom: ${spacing.lg};`}>
+              ⚙️ Options de la session
+            </h2>
+
+            <p css={css`
+              margin-bottom: ${spacing.lg};
+              color: ${colors.textSecondary};
+            `}>
+              Vous avez choisi : <strong>{selectedProduct?.name}</strong>
+              <br />
+              <strong css={css`color: ${colors.primary};`}>
+                {(selectedProduct?.price / 100).toFixed(2)} €
+              </strong>
+            </p>
+
+            <InfoBox title="ℹ️ Comment ça fonctionne">
+              <ul css={css`
+                list-style: none;
+                padding: 0;
+                margin: 0;
+                
+                li {
+                  margin-bottom: ${spacing.sm};
+                }
+              `}>
+                <li>• Pré-autorisation (×2) – aucun débit immédiat</li>
+                <li>• Temps supplémentaire : <strong>0,50 €/min</strong></li>
+                <li>• Vous ne payez que le temps réel</li>
+              </ul>
+            </InfoBox>
+
+            <div css={css`margin-bottom: ${spacing.lg};`}>
+              <label css={css`
+                display: flex;
+                align-items: center;
+                gap: ${spacing.md};
+                cursor: pointer;
+                
+                input {
+                  cursor: pointer;
+                }
+              `}>
+                <input 
+                  type="checkbox" 
+                  checked={wantReceipt} 
+                  onChange={this.handleWantReceiptChange}
+                />
+                Recevoir le reçu par email
+              </label>
             </div>
-          )}
-          {(wantReceipt || wantReminder) && (
-            <div style={{ marginBottom: '10px' }}>
-              <label>Email :</label>
-              <input 
-                type="email" 
-                value={customerEmail} 
-                onChange={this.handleEmailChange} 
-                onFocus={this.handleEmailFocus}
-                style={{ width: '100%', padding: '6px', marginTop: '5px', fontSize: '0.9rem' }} 
-              />
-            </div>
-          )}
-          <div style={{ marginTop: '20px' }}>
-            <button onClick={this.submitEmailForm} disabled={paymentInProgress} style={{ padding: '8px 16px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-              Démarrer la session
-            </button>
-            <button onClick={this.cancelEmailForm} style={{ marginLeft: '10px', padding: '8px 16px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-              Annuler
-            </button>
-          </div>
-          
-          {showKeyboard && (
-            <>
-              <div style={{
-                position: 'fixed',
-                bottom: '210px',
-                left: '10px',
-                right: '10px',
-                background: '#e8f0fe',
-                padding: '6px',
-                borderRadius: '5px',
-                textAlign: 'center',
-                fontSize: '0.9rem',
-                zIndex: 999
-              }}>
-                📧 {customerEmail || 'Saisissez votre email...'}
+
+            {selectedProduct && parseInt(selectedProduct.name.split(' ')[0]) > 5 && (
+              <div css={css`margin-bottom: ${spacing.lg};`}>
+                <label css={css`
+                  display: flex;
+                  align-items: center;
+                  gap: ${spacing.md};
+                  cursor: pointer;
+                  
+                  input {
+                    cursor: pointer;
+                  }
+                `}>
+                  <input 
+                    type="checkbox" 
+                    checked={wantReminder} 
+                    onChange={this.handleWantReminderChange}
+                  />
+                  Recevoir un rappel 5 min avant la fin
+                </label>
               </div>
-              <SimpleKeyboard 
-                onChange={this.handleKeyboardChange} 
-                onEnter={this.handleKeyboardEnter}
-                onClose={() => this.setState({ showKeyboard: false })}
-              />
-            </>
-          )}
+            )}
+
+            {(wantReceipt || wantReminder) && (
+              <div css={css`
+                margin-bottom: ${spacing.lg};
+                
+                label {
+                  display: block;
+                  font-weight: 600;
+                  margin-bottom: ${spacing.sm};
+                  color: ${colors.text};
+                }
+                
+                input {
+                  width: 100%;
+                }
+              `}>
+                <label>📧 Email :</label>
+                <input 
+                  type="email" 
+                  value={customerEmail} 
+                  onChange={this.handleEmailChange} 
+                  onFocus={this.handleEmailFocus}
+                  placeholder="votre.email@example.com"
+                />
+              </div>
+            )}
+
+            <div css={css`
+              display: flex;
+              gap: ${spacing.md};
+              margin-top: ${spacing.xl};
+              flex-wrap: wrap;
+            `}>
+              <Button 
+                variant="primary"
+                fullWidth
+                onClick={this.submitEmailForm} 
+                disabled={paymentInProgress}
+              >
+                🚀 Démarrer la session
+              </Button>
+              <Button 
+                variant="secondary"
+                fullWidth
+                onClick={this.cancelEmailForm}
+              >
+                ❌ Annuler
+              </Button>
+            </div>
+
+            {showKeyboard && (
+              <>
+                <div css={css`
+                  position: fixed;
+                  bottom: 210px;
+                  left: ${spacing.lg};
+                  right: ${spacing.lg};
+                  background: ${colors.primaryLight};
+                  padding: ${spacing.md};
+                  border-radius: 8px;
+                  text-align: center;
+                  font-size: 0.9rem;
+                  z-index: 999;
+                  color: ${colors.primary};
+                `}>
+                  📧 {customerEmail || 'Saisissez votre email...'}
+                </div>
+                <SimpleKeyboard 
+                  onChange={this.handleKeyboardChange} 
+                  onEnter={this.handleKeyboardEnter}
+                  onClose={() => this.setState({ showKeyboard: false })}
+                />
+              </>
+            )}
+          </Card>
         </div>
       );
     }
 
-    if (!this.client) {
-      return <div>Connexion au service...</div>;
-    }
-    
-    if (!reader) {
-      return <Readers onClickDiscover={() => this.discoverReaders()} onClickCancelDiscover={() => this.cancelDiscoverReaders()} onSubmitRegister={this.registerAndConnectNewReader} readers={discoveredReaders} />;
-    }
-
+    // Session active
     if (sessionActive) {
-      const elapsedMs = this.state.sessionStartTime ? Date.now() - this.state.sessionStartTime : 0;
+      const elapsedMs = sessionStartTime ? Date.now() - sessionStartTime : 0;
       const totalSeconds = Math.floor(elapsedMs / 1000);
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = totalSeconds % 60;
+
       return (
-        <div style={{ textAlign: 'center', padding: '40px' }}>
-          <h2>Session en cours</h2>
-          <p>Produit : {this.state.selectedProduct?.name} ({this.renderPrice(this.state.selectedProduct)})</p>
-          <p style={{ fontSize: '3rem', fontFamily: 'monospace' }}>{minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}</p>
-          <button onClick={this.endSession} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-            {paymentInProgress ? "Paiement en cours..." : "Terminer et payer"}
-          </button>
-          <button onClick={this.cancelSession} style={{ marginLeft: '10px', padding: '10px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-            Annuler
-          </button>
-        </div>
+        <SessionScreen
+          minutes={minutes}
+          seconds={seconds}
+          productName={selectedProduct?.name}
+          productPrice={`${(selectedProduct?.price / 100).toFixed(2)} €`}
+          onEnd={this.endSession}
+          onCancel={this.cancelSession}
+          isPaymentInProgress={paymentInProgress}
+        />
       );
     }
 
@@ -1169,9 +1165,13 @@ endSession = async () => {
   }
 
   render() {
-    const { backendURL, reader } = this.state;
     return (
-      <div className={css`display: flex; align-items: center; justify-content: center; min-height: 100vh;`}>
+      <div css={css`
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `}>
         {this.renderForm()}
       </div>
     );
