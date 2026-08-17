@@ -1,71 +1,269 @@
 import React, { Component } from "react";
+import { css } from "@emotion/react";
+
 import Client from "../client";
+import Logger from "../logger";
+
+import { colors, gradients, spacing, transitions, shadows } from "../styles/colors";
+import { WelcomeScreen } from "./WelcomeScreen";
+import { LoadingScreen } from "./LoadingScreen";
+import { ErrorScreen } from "./ErrorScreen";
+import { Button } from "./Button";
+import { Card, InfoBox, AlertBox, Badge } from "./Card";
+import { ProductGrid } from "./ProductGrid";
+import { SessionScreen } from "./SessionScreen";
+
+const DEFAULT_BACKEND_URL = 'https://qnook-backend-unified.onrender.com';
+const EXTRA_MINUTE_PRICE = 50;
+
+class SimpleKeyboard extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { value: '' };
+  }
+
+  handleKeyPress = (key) => {
+    let newValue = this.state.value;
+    if (key === '{enter}') {
+      if (this.props.onEnter) this.props.onEnter(newValue);
+      this.setState({ value: '' });
+    } else if (key === '{bksp}') {
+      newValue = newValue.slice(0, -1);
+      this.setState({ value: newValue });
+      if (this.props.onChange) this.props.onChange(newValue);
+    } else {
+      newValue += key;
+      this.setState({ value: newValue });
+      if (this.props.onChange) this.props.onChange(newValue);
+    }
+  };
+
+  render() {
+    const keys = [
+      ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '{bksp}'],
+      ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+      ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', '@'],
+      ['z', 'x', 'c', 'v', 'b', 'n', 'm', '.', '{enter}']
+    ];
+
+    return (
+      <div css={css`
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: ${colors.light};
+        padding: ${spacing.sm};
+        border-top: 1px solid ${colors.border};
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      `}>
+        {keys.map((row, i) => (
+          <div key={i} css={css`
+            display: flex;
+            justify-content: center;
+            margin-bottom: ${spacing.xs};
+          `}>
+            {row.map(key => (
+              <button
+                key={key}
+                onClick={() => this.handleKeyPress(key)}
+                css={css`
+                  width: ${key === '{enter}' ? '60px' : (key === '{bksp}' ? '60px' : '40px')};
+                  height: 36px;
+                  margin: 1px;
+                  font-size: 0.9rem;
+                  background: ${colors.white};
+                  border: 1px solid ${colors.border};
+                  border-radius: 4px;
+                  cursor: pointer;
+                  transition: all ${transitions.fast};
+                  
+                  &:hover {
+                    background: ${colors.light};
+                    border-color: ${colors.primary};
+                  }
+                  
+                  &:active {
+                    background: ${colors.primaryLight};
+                  }
+                `}
+              >
+                {key === '{enter}' ? '⏎' : (key === '{bksp}' ? '⌫' : key)}
+              </button>
+            ))}
+          </div>
+        ))}
+        <Button 
+          variant="danger"
+          size="small"
+          onClick={() => this.props.onClose && this.props.onClose()}
+          css={css`margin-top: ${spacing.sm};`}
+        >
+          Fermer
+        </Button>
+      </div>
+    );
+  }
+}
 
 class App extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      readerStatus: "initializing",
+      status: "requires_initializing",
+      backendURL: DEFAULT_BACKEND_URL,
+      discoveredReaders: [],
+      connectionStatus: "not_connected",
+      reader: null,
       showProductSelection: false,
       showEmailForm: false,
+      emailSubmitted: false,
       selectedProduct: null,
       products: [],
+      sessionActive: false,
+      paymentInProgress: false,
+      showWelcomeScreen: true,
       wantReceipt: false,
-      customerEmail: "",
       wantReminder: false,
+      customerEmail: "",
+      sessionStartTime: null,
+      showKeyboard: false,
+      readerStatus: "initializing",
+      readerError: null,
     };
   }
 
   componentDidMount() {
-    // Initialize client
-    this.client = new Client('https://qnook-backend-unified.onrender.com');
-    
-    // Simulate reader connection
-    setTimeout(() => {
-      this.setState({ readerStatus: "connected" });
-    }, 2000);
-    
-    // Load products
+    this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
     this.loadProducts();
+    
+    setTimeout(() => {
+      this.autoConnectSimulator();
+    }, 2000);
+  }
+
+  componentWillUnmount() {
+    if (this.timerInterval) clearInterval(this.timerInterval);
   }
 
   loadProducts = async () => {
+    const { backendURL } = this.state;
+    if (!backendURL) return;
     try {
-      const response = await fetch('https://qnook-backend-unified.onrender.com/api/products');
-      if (response.ok) {
-        const data = await response.json();
-        this.setState({ products: data });
-      }
+      const response = await fetch(`${backendURL}/api/products`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      this.setState({ products: data });
     } catch (err) {
       console.error("Erreur chargement produits:", err);
     }
   };
 
-  handleWelcomeClick = () => {
-    this.setState({ showProductSelection: true });
+  autoConnectSimulator = async () => {
+    console.log("Tentative de connexion au simulateur...");
+    
+    let attempts = 0;
+    const maxAttempts = 20;
+    
+    while (!this.terminal && attempts < maxAttempts) {
+      await new Promise(r => setTimeout(r, 500));
+      attempts++;
+    }
+    
+    if (!this.terminal) {
+      console.error("Terminal non initialisé");
+      this.setState({ 
+        readerStatus: "error",
+        readerError: "Terminal Stripe non initialisé" 
+      });
+      return;
+    }
+
+    try {
+      const simulatedResult = await this.terminal.discoverReaders({ simulated: true });
+      
+      if (!simulatedResult) {
+        throw new Error("Pas de réponse de discoverReaders");
+      }
+
+      if (simulatedResult.error) {
+        throw new Error(simulatedResult.error.message || "Erreur découverte");
+      }
+
+      if (!simulatedResult.discoveredReaders || simulatedResult.discoveredReaders.length === 0) {
+        throw new Error("Aucun simulateur trouvé");
+      }
+
+      const connectResult = await this.connectToReader(simulatedResult.discoveredReaders[0]);
+      
+      if (connectResult && !connectResult.error) {
+        console.log("Simulateur connecté avec succès");
+        this.setState({ 
+          readerStatus: "connected",
+          readerError: null,
+        });
+      } else {
+        throw new Error("Impossible de se connecter au simulateur");
+      }
+    } catch (err) {
+      console.error("Erreur connexion simulateur:", err.message);
+      this.setState({ 
+        readerStatus: "error",
+        readerError: err.message 
+      });
+    }
   };
 
-  handleProductSelect = (product) => {
-    this.setState({ 
+  initializeBackendClientAndTerminal(url) {
+    this.client = new Client(url);
+    this.terminal = window.StripeTerminal.create({
+      onFetchConnectionToken: async () => {
+        const tokenResult = await this.client.createConnectionToken();
+        return tokenResult.secret;
+      },
+      onUnexpectedReaderDisconnect: () => {
+        this.setState({ connectionStatus: "not_connected", reader: null });
+      },
+      onConnectionStatusChange: (ev) => {
+        this.setState({ connectionStatus: ev.status, reader: null });
+      }
+    });
+  }
+
+  connectToReader = async selectedReader => {
+    const connectResult = await this.terminal.connectReader(selectedReader);
+    if (connectResult.error) {
+      console.log("Failed to connect:", connectResult.error);
+    } else {
+      this.setState({
+        status: "workflows",
+        discoveredReaders: [],
+        reader: connectResult.reader
+      });
+      return connectResult;
+    }
+  };
+
+  handleScreenTouch = () => {
+    const { showWelcomeScreen, sessionActive } = this.state;
+    if (showWelcomeScreen && !sessionActive) {
+      this.setState({ showWelcomeScreen: false, showProductSelection: true });
+    }
+  };
+
+  selectProduct = (product) => {
+    this.setState({
       selectedProduct: product,
-      showEmailForm: true,
       showProductSelection: false,
+      showEmailForm: true,
       wantReceipt: false,
       wantReminder: false,
       customerEmail: "",
+      emailSubmitted: false,
     });
-  };
-
-  handleEmailFormCancel = () => {
-    this.setState({
-      showProductSelection: true,
-      showEmailForm: false,
-      selectedProduct: null
-    });
-  };
-
-  handleEmailChange = (e) => {
-    this.setState({ customerEmail: e.target.value });
   };
 
   handleWantReceiptChange = (e) => {
@@ -76,382 +274,446 @@ class App extends Component {
     this.setState({ wantReminder: e.target.checked });
   };
 
-  handleEmailFormSubmit = () => {
-    const { wantReceipt, wantReminder, customerEmail, selectedProduct } = this.state;
-    
-    // Validation
+  handleEmailChange = (e) => {
+    this.setState({ customerEmail: e.target.value });
+  };
+
+  handleEmailFocus = () => {
+    this.setState({ showKeyboard: true });
+  };
+
+  handleKeyboardChange = (value) => {
+    this.setState({ customerEmail: value });
+  };
+
+  handleKeyboardEnter = (value) => {
+    this.setState({ showKeyboard: false, customerEmail: value });
+  };
+
+  submitEmailForm = () => {
+    const { wantReceipt, wantReminder, customerEmail } = this.state;
     if ((wantReceipt || wantReminder) && !customerEmail) {
       alert("Veuillez saisir une adresse email.");
       return;
     }
-
-    // Démarrer la session
-    console.log("Session démarrée pour:", selectedProduct);
-    console.log("Email:", customerEmail);
-    console.log("Reçu:", wantReceipt);
-    console.log("Rappel:", wantReminder);
-    
-    // TODO: Traiter le paiement
+    this.setState({ emailSubmitted: true });
+    this.startPaymentAuthorization();
   };
 
-  render() {
-    const { readerStatus, showProductSelection, showEmailForm, selectedProduct, products, wantReceipt, wantReminder, customerEmail } = this.state;
+  cancelEmailForm = () => {
+    this.setState({
+      showProductSelection: true,
+      selectedProduct: null,
+      showEmailForm: false,
+    });
+  };
+
+  startPaymentAuthorization = async () => {
+    const { selectedProduct, wantReceipt, customerEmail } = this.state;
+    if (!selectedProduct) return;
+
+    const chosenMinutes = parseInt(selectedProduct.name.split(' ')[0]);
+    const basePrice = selectedProduct.price;
+    const pricePerMinute = basePrice / chosenMinutes;
+
+    this.setState({ paymentInProgress: true });
+
+    try {
+      const createIntentResponse = await this.client.createPaymentIntent({
+        amount: basePrice,
+        currency: "eur",
+        description: `Qnook - ${selectedProduct.name}`,
+        paymentMethodTypes: ["card_present"],
+        email: wantReceipt ? customerEmail : undefined
+      });
+      const clientSecret = createIntentResponse.client_secret;
+
+      this.terminal.setSimulatorConfiguration({
+        testPaymentMethod: "visa",
+        testCardNumber: "4242424242424242",
+      });
+
+      const collectResult = await this.terminal.collectPaymentMethod(clientSecret);
+      if (collectResult.error) throw new Error(collectResult.error.message);
+
+      const confirmResult = await this.terminal.processPayment(collectResult.paymentIntent);
+      if (confirmResult.error) {
+        alert(`Erreur de paiement : ${confirmResult.error.message}`);
+        return;
+      }
+
+      this.pendingPaymentIntentId = confirmResult.paymentIntent.id;
+      this.currentAuthorizedAmount = basePrice;
+      this.pricePerMinute = pricePerMinute;
+
+      const startTime = Date.now();
+      this.setState({
+        sessionStartTime: startTime,
+        sessionActive: true,
+        showEmailForm: false,
+        paymentInProgress: false,
+        showProductSelection: false,
+        showWelcomeScreen: false,
+      });
+      
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.timerInterval = setInterval(() => this.forceUpdate(), 1000);
+
+      try {
+        await fetch('http://localhost:5000/ouvrir', { method: 'POST' });
+        console.log("Serrure ouverte");
+      } catch (err) {
+        console.error("Erreur ouverture serrure :", err);
+      }
+
+    } catch (err) {
+      console.error("Erreur startPaymentAuthorization:", err);
+      alert(`Erreur : ${err.message}`);
+      this.setState({ paymentInProgress: false });
+    }
+  };
+
+  endSession = async () => {
+    if (this.state.paymentInProgress) return;
+    if (!this.state.sessionStartTime || !this.state.selectedProduct || !this.pendingPaymentIntentId) {
+      alert("Aucune session en cours");
+      return;
+    }
+
+    this.setState({ paymentInProgress: true });
+
+    const elapsedMs = Date.now() - this.state.sessionStartTime;
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
+    const chosenMinutes = parseInt(this.state.selectedProduct.name.split(' ')[0]);
+    const extraMinutes = Math.max(0, elapsedMinutes - chosenMinutes);
+    const extraAmount = extraMinutes * EXTRA_MINUTE_PRICE;
+    const totalDue = this.state.selectedProduct.price + extraAmount;
+
+    let finalCaptureAmount = Math.min(totalDue, this.currentAuthorizedAmount);
+
+    const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
+    const totalPrice = (finalCaptureAmount / 100).toFixed(2);
+    let description = `Produit : ${chosenMinutes} min (${productPrice} EUR) - Total : ${totalPrice} EUR`;
+
+    try {
+      await fetch(`${this.state.backendURL}/update-payment-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentIntentId: this.pendingPaymentIntentId,
+          description: description
+        })
+      }).catch(e => console.warn);
+
+      const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentIntentId: this.pendingPaymentIntentId,
+          amountToCapture: finalCaptureAmount
+        })
+      });
+      if (!captureResponse.ok) throw new Error((await captureResponse.json()).error);
+
+      alert(`Paiement réussi!\nTemps réel : ${elapsedMinutes} min\nMontant : ${totalPrice} EUR`);
+      if (this.timerInterval) clearInterval(this.timerInterval);
+      this.resetSession();
+    } catch (err) {
+      console.error("Erreur endSession:", err);
+      alert(`Erreur : ${err.message}`);
+    } finally {
+      this.setState({ paymentInProgress: false });
+    }
+  };
+
+  resetSession = () => {
+    this.setState({
+      sessionActive: false,
+      sessionStartTime: null,
+      showProductSelection: false,
+      showWelcomeScreen: true,
+      selectedProduct: null,
+      paymentInProgress: false,
+      showEmailForm: false,
+      emailSubmitted: false,
+      showKeyboard: false,
+    });
+    if (this.timerInterval) clearInterval(this.timerInterval);
+  };
+
+  cancelSession = () => {
+    this.resetSession();
+  };
+
+  renderForm() {
+    const {
+      showWelcomeScreen,
+      showProductSelection,
+      showEmailForm,
+      emailSubmitted,
+      selectedProduct,
+      products,
+      wantReceipt,
+      wantReminder,
+      customerEmail,
+      sessionActive,
+      paymentInProgress,
+      reader,
+      showKeyboard,
+      readerStatus,
+      readerError,
+      sessionStartTime,
+    } = this.state;
 
     // Écran de chargement
     if (readerStatus === "initializing") {
+      return <LoadingScreen 
+        message="Connexion au lecteur..." 
+        submessage="Veuillez patienter..."
+      />;
+    }
+
+    // Écran d'erreur
+    if (readerStatus === "error") {
+      return <ErrorScreen 
+        title="Erreur de connexion"
+        message={readerError}
+        onRetry={() => this.autoConnectSimulator()}
+      />;
+    }
+
+    // Écran d'accueil
+    if (showWelcomeScreen) {
       return (
-        <div style={{
-          width: "100vw",
-          height: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          alignItems: "center",
-          background: "linear-gradient(135deg, #1A1A2E 0%, #2D2E47 100%)",
-          color: "white",
-          textAlign: "center",
-        }}>
-          <div style={{ fontSize: "60px", marginBottom: "32px" }}>⏳</div>
-          <h2 style={{ fontSize: "1.75rem", marginBottom: "16px", fontWeight: "700" }}>
-            Connexion au lecteur...
-          </h2>
-          <p style={{ fontSize: "1rem", color: "rgba(255, 255, 255, 0.7)" }}>
-            Veuillez patienter...
-          </p>
+        <WelcomeScreen 
+          onTouch={this.handleScreenTouch}
+          readerStatus={readerStatus}
+          showBadge={true}
+        />
+      );
+    }
+
+    // Sélection produits
+    if (showProductSelection && reader && !sessionActive && !showEmailForm) {
+      if (products.length === 0) {
+        return <LoadingScreen message="Chargement des produits..." />;
+      }
+      return (
+        <div css={css`
+          background-color: ${colors.light};
+          min-height: 100vh;
+          padding: ${spacing.xl} 0;
+        `}>
+          <ProductGrid 
+            products={products}
+            onSelectProduct={this.selectProduct}
+          />
         </div>
       );
     }
 
-    // Écran de formulaire email
-    if (showEmailForm && selectedProduct) {
+    // Formulaire email
+    if (showEmailForm && !emailSubmitted) {
       const chosenMinutes = parseInt(selectedProduct.name.split(' ')[0]);
       
       return (
-        <div style={{
-          width: "100vw",
-          height: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "linear-gradient(135deg, #F5F5F7 0%, #FFFFFF 100%)",
-          padding: "24px",
-        }}>
-          <div style={{
-            background: "white",
-            borderRadius: "16px",
-            padding: "32px",
-            maxWidth: "500px",
-            width: "100%",
-            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
-            maxHeight: "calc(100vh - 48px)",
-            overflowY: "auto",
-          }}>
-            <h2 style={{ marginBottom: "24px", color: "#1A1A2E", fontSize: "1.5rem", fontWeight: "700" }}>
+        <div css={css`
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background-color: ${colors.light};
+          padding: ${spacing.lg};
+        `}>
+          <Card variant="default" css={css`
+            max-width: 500px;
+            width: 100%;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+          `}>
+            <h2 css={css`margin-bottom: ${spacing.lg};`}>
               ⚙️ Options de la session
             </h2>
 
-            <p style={{
-              marginBottom: "24px",
-              color: "#6B7280",
-              fontSize: "0.95rem",
-            }}>
-              Vous avez choisi : <strong>{selectedProduct.name}</strong>
+            <p css={css`
+              margin-bottom: ${spacing.lg};
+              color: ${colors.textSecondary};
+            `}>
+              Vous avez choisi : <strong>{selectedProduct?.name}</strong>
               <br />
-              <strong style={{ color: "#0066FF", fontSize: "1.1rem" }}>
-                {(selectedProduct.price / 100).toFixed(2)} EUR
+              <strong css={css`color: ${colors.primary};`}>
+                {(selectedProduct?.price / 100).toFixed(2)} EUR
               </strong>
             </p>
 
-            <div style={{
-              background: "#F0F4FF",
-              padding: "16px",
-              borderRadius: "8px",
-              marginBottom: "24px",
-              fontSize: "0.9rem",
-              color: "#0066FF",
-            }}>
-              <strong>ℹ️ Comment ça fonctionne</strong>
-              <ul style={{ margin: "8px 0 0 0", paddingLeft: "20px" }}>
-                <li>Pré-autorisation (×2) – aucun débit immédiat</li>
-                <li>Temps supplémentaire : <strong>0,50 €/min</strong></li>
-                <li>Vous ne payez que le temps réel</li>
+            <InfoBox title="ℹ️ Comment ça fonctionne">
+              <ul css={css`
+                list-style: none;
+                padding: 0;
+                margin: 0;
+                
+                li {
+                  margin-bottom: ${spacing.sm};
+                }
+              `}>
+                <li>• Pré-autorisation (×2) – aucun débit immédiat</li>
+                <li>• Temps supplémentaire : <strong>0,50 €/min</strong></li>
+                <li>• Vous ne payez que le temps réel</li>
               </ul>
-            </div>
+            </InfoBox>
 
-            <div style={{ marginBottom: "24px" }}>
-              <label style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                cursor: "pointer",
-              }}>
+            <div css={css`margin-bottom: ${spacing.lg};`}>
+              <label css={css`
+                display: flex;
+                align-items: center;
+                gap: ${spacing.md};
+                cursor: pointer;
+                
+                input {
+                  cursor: pointer;
+                }
+              `}>
                 <input 
                   type="checkbox" 
-                  checked={wantReceipt}
+                  checked={wantReceipt} 
                   onChange={this.handleWantReceiptChange}
-                  style={{ cursor: "pointer" }}
                 />
-                <span style={{ color: "#1A1A2E" }}>Recevoir le reçu par email</span>
+                Recevoir le reçu par email
               </label>
             </div>
 
             {chosenMinutes > 5 && (
-              <div style={{ marginBottom: "24px" }}>
-                <label style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "12px",
-                  cursor: "pointer",
-                }}>
+              <div css={css`margin-bottom: ${spacing.lg};`}>
+                <label css={css`
+                  display: flex;
+                  align-items: center;
+                  gap: ${spacing.md};
+                  cursor: pointer;
+                  
+                  input {
+                    cursor: pointer;
+                  }
+                `}>
                   <input 
                     type="checkbox" 
-                    checked={wantReminder}
+                    checked={wantReminder} 
                     onChange={this.handleWantReminderChange}
-                    style={{ cursor: "pointer" }}
                   />
-                  <span style={{ color: "#1A1A2E" }}>Recevoir un rappel 5 min avant la fin</span>
+                  Recevoir un rappel 5 min avant la fin
                 </label>
               </div>
             )}
 
             {(wantReceipt || wantReminder) && (
-              <div style={{ marginBottom: "24px" }}>
-                <label style={{
-                  display: "block",
-                  fontWeight: "600",
-                  marginBottom: "8px",
-                  color: "#1A1A2E",
-                  fontSize: "0.95rem",
-                }}>
-                  📧 Email :
-                </label>
+              <div css={css`
+                margin-bottom: ${spacing.lg};
+                
+                label {
+                  display: block;
+                  font-weight: 600;
+                  margin-bottom: ${spacing.sm};
+                  color: ${colors.text};
+                }
+                
+                input {
+                  width: 100%;
+                }
+              `}>
+                <label>📧 Email :</label>
                 <input 
                   type="email" 
-                  value={customerEmail}
-                  onChange={this.handleEmailChange}
+                  value={customerEmail} 
+                  onChange={this.handleEmailChange} 
+                  onFocus={this.handleEmailFocus}
                   placeholder="votre.email@example.com"
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: "8px",
-                    fontSize: "1rem",
-                    boxSizing: "border-box",
-                    fontFamily: "inherit",
-                  }}
                 />
               </div>
             )}
 
-            <div style={{
-              display: "flex",
-              gap: "12px",
-              marginTop: "32px",
-              flexWrap: "wrap",
-            }}>
-              <button 
-                onClick={this.handleEmailFormSubmit}
-                style={{
-                  flex: 1,
-                  minWidth: "140px",
-                  padding: "16px",
-                  backgroundColor: "#0066FF",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "10px",
-                  fontWeight: "700",
-                  cursor: "pointer",
-                  fontSize: "1.1rem",
-                  transition: "all 0.3s ease",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#0052CC";
-                  e.currentTarget.style.transform = "translateY(-2px)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "#0066FF";
-                  e.currentTarget.style.transform = "translateY(0)";
-                }}
+            <div css={css`
+              display: flex;
+              gap: ${spacing.md};
+              margin-top: ${spacing.xl};
+              flex-wrap: wrap;
+            `}>
+              <Button 
+                variant="primary"
+                fullWidth
+                onClick={this.submitEmailForm} 
+                disabled={paymentInProgress}
               >
                 🚀 Démarrer la session
-              </button>
-              <button 
-                onClick={this.handleEmailFormCancel}
-                style={{
-                  flex: 1,
-                  minWidth: "140px",
-                  padding: "16px",
-                  backgroundColor: "#E5E7EB",
-                  color: "#1A1A2E",
-                  border: "none",
-                  borderRadius: "10px",
-                  fontWeight: "700",
-                  cursor: "pointer",
-                  fontSize: "1.1rem",
-                  transition: "all 0.3s ease",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#D1D5DB";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "#E5E7EB";
-                }}
+              </Button>
+              <Button 
+                variant="secondary"
+                fullWidth
+                onClick={this.cancelEmailForm}
               >
                 ❌ Annuler
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Écran de sélection des produits
-    if (showProductSelection) {
-      return (
-        <div style={{
-          width: "100vw",
-          minHeight: "100vh",
-          background: "linear-gradient(135deg, #F5F5F7 0%, #FFFFFF 100%)",
-          padding: "40px 20px",
-        }}>
-          <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-            <div style={{ textAlign: "center", marginBottom: "48px" }}>
-              <h2 style={{
-                fontSize: "2.5rem",
-                margin: "0 0 12px 0",
-                color: "#1A1A2E",
-                fontWeight: "900",
-              }}>
-                Choisissez votre durée
-              </h2>
-              <p style={{
-                color: "#6B7280",
-                fontSize: "1.1rem",
-                margin: "0",
-              }}>
-                Touchez la durée qui vous convient
-              </p>
+              </Button>
             </div>
 
-            {/* Grid de produits */}
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-              gap: "28px",
-              marginTop: "40px",
-            }}>
-              {products.map((product) => (
-                <div
-                  key={product.id}
-                  onClick={() => this.handleProductSelect(product)}
-                  style={{
-                    background: "linear-gradient(135deg, #FFFFFF 0%, #F8FAFF 100%)",
-                    border: "2px solid #E5E7EB",
-                    borderRadius: "16px",
-                    padding: "28px 20px",
-                    textAlign: "center",
-                    cursor: "pointer",
-                    transition: "all 0.3s ease",
-                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = "translateY(-12px) scale(1.02)";
-                    e.currentTarget.style.boxShadow = "0 16px 40px rgba(0, 102, 255, 0.2)";
-                    e.currentTarget.style.borderColor = "#0066FF";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = "translateY(0) scale(1)";
-                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.08)";
-                    e.currentTarget.style.borderColor = "#E5E7EB";
-                  }}
-                >
-                  <div style={{
-                    fontSize: "3.5rem",
-                    marginBottom: "16px",
-                    filter: "drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1))",
-                  }}>
-                    {product.image || "🛋️"}
-                  </div>
-
-                  <h3 style={{
-                    fontSize: "1.4rem",
-                    color: "#1A1A2E",
-                    margin: "0 0 12px 0",
-                    fontWeight: "700",
-                  }}>
-                    {product.name}
-                  </h3>
-
-                  <div style={{
-                    color: "#0066FF",
-                    fontSize: "1.5rem",
-                    fontWeight: "800",
-                  }}>
-                    {(product.price / 100).toFixed(2)} EUR
-                  </div>
+            {showKeyboard && (
+              <>
+                <div css={css`
+                  position: fixed;
+                  bottom: 210px;
+                  left: ${spacing.lg};
+                  right: ${spacing.lg};
+                  background: ${colors.primaryLight};
+                  padding: ${spacing.md};
+                  border-radius: 8px;
+                  text-align: center;
+                  font-size: 0.9rem;
+                  z-index: 999;
+                  color: ${colors.primary};
+                `}>
+                  📧 {customerEmail || 'Saisissez votre email...'}
                 </div>
-              ))}
-            </div>
-          </div>
+                <SimpleKeyboard 
+                  onChange={this.handleKeyboardChange} 
+                  onEnter={this.handleKeyboardEnter}
+                  onClose={() => this.setState({ showKeyboard: false })}
+                />
+              </>
+            )}
+          </Card>
         </div>
       );
     }
 
-    // Écran d'accueil
+    // Session active
+    if (sessionActive) {
+      const elapsedMs = sessionStartTime ? Date.now() - sessionStartTime : 0;
+      const totalSeconds = Math.floor(elapsedMs / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+
+      return (
+        <SessionScreen
+          minutes={minutes}
+          seconds={seconds}
+          productName={selectedProduct?.name}
+          productPrice={`${(selectedProduct?.price / 100).toFixed(2)} EUR`}
+          onEnd={this.endSession}
+          onCancel={this.cancelSession}
+          isPaymentInProgress={paymentInProgress}
+        />
+      );
+    }
+
+    return null;
+  }
+
+  render() {
     return (
-      <div 
-        onClick={this.handleWelcomeClick}
-        style={{
-          width: "100vw",
-          height: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          alignItems: "center",
-          background: "linear-gradient(135deg, #0066FF 0%, #1A1A2E 100%)",
-          color: "white",
-          textAlign: "center",
-          cursor: "pointer",
-          padding: "24px",
-          position: "relative",
-        }}
-      >
-        <div style={{ fontSize: "5rem", marginBottom: "24px" }}>🛋️</div>
-        <h1 style={{
-          fontSize: "clamp(2.5rem, 8vw, 4rem)",
-          margin: "0 0 16px 0",
-          fontWeight: "900",
-          letterSpacing: "-1px",
-        }}>
-          Qnook
-        </h1>
-        <p style={{
-          fontSize: "clamp(1.2rem, 4vw, 1.5rem)",
-          margin: "0 0 32px 0",
-          fontWeight: "400",
-          opacity: 0.95,
-        }}>
-          Bienvenue chez Qnook
-        </p>
-        <p style={{
-          fontSize: "1.1rem",
-          margin: "0",
-          opacity: 0.85,
-          fontWeight: "500",
-        }}>
-          ➜ Touchez l'écran pour commencer
-        </p>
-        <div style={{
-          position: "absolute",
-          bottom: "32px",
-          background: "rgba(16, 185, 129, 0.9)",
-          padding: "8px 16px",
-          borderRadius: "20px",
-          fontSize: "0.9rem",
-          fontWeight: "600",
-        }}>
-          ✅ Lecteur connecté
-        </div>
+      <div css={css`
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `}>
+        {this.renderForm()}
       </div>
     );
   }
