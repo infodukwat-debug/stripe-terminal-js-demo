@@ -1,13 +1,7 @@
 import React from 'react';
 import { css } from '@emotion/react';
-import { colors, gradients, spacing, transitions } from '../styles/colors';
-import { Badge } from './Card';
 
-export const WelcomeScreen = ({ 
-  onTouch, 
-  readerStatus = 'connected',
-  showBadge = true 
-}) => {
+export const WelcomeScreen = ({ onTouch, readerStatus = 'connected', showBadge = true }) => {
   return (
     <div
       onClick={onTouch}
@@ -18,11 +12,11 @@ export const WelcomeScreen = ({
         flex-direction: column;
         justify-content: center;
         align-items: center;
-        background: ${gradients.welcomeScreen};
-        color: ${colors.white};
+        background: linear-gradient(135deg, #0066FF 0%, #1A1A2E 100%);
+        color: white;
         cursor: pointer;
         text-align: center;
-        padding: ${spacing.lg};
+        padding: 24px;
         position: relative;
         overflow: hidden;
         animation: fadeIn 0.6s ease-in-out;
@@ -45,18 +39,6 @@ export const WelcomeScreen = ({
         pointer-events: none;
       `} />
 
-      {/* Badge statut (optionnel) */}
-      {showBadge && readerStatus === 'connecting' && (
-        <div css={css`
-          position: absolute;
-          top: ${spacing.xl};
-          right: ${spacing.xl};
-          animation: pulse 2s infinite;
-        `}>
-          <Badge variant="warning">🔄 Connexion...</Badge>
-        </div>
-      )}
-
       {/* Container principal */}
       <div css={css`
         z-index: 10;
@@ -76,7 +58,7 @@ export const WelcomeScreen = ({
         {/* Logo/Emoji principal */}
         <h1 css={css`
           font-size: 5rem;
-          margin: 0 0 ${spacing.lg} 0;
+          margin: 0 0 24px 0;
           animation: pulse 3s infinite;
           filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.2));
         `}>
@@ -86,9 +68,9 @@ export const WelcomeScreen = ({
         {/* Titre */}
         <h1 css={css`
           font-size: clamp(2.5rem, 8vw, 4rem);
-          margin: 0 0 ${spacing.md} 0;
-          font-weight: 800;
-          letter-spacing: -2px;
+          margin: 0 0 16px 0;
+          font-weight: 900;
+          letter-spacing: -1px;
           text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
         `}>
           Qnook
@@ -97,7 +79,7 @@ export const WelcomeScreen = ({
         {/* Sous-titre */}
         <p css={css`
           font-size: clamp(1.2rem, 4vw, 1.5rem);
-          margin: 0 0 ${spacing.xl} 0;
+          margin: 0 0 32px 0;
           font-weight: 400;
           opacity: 0.95;
           letter-spacing: 0.5px;
@@ -122,23 +104,18 @@ export const WelcomeScreen = ({
       {showBadge && readerStatus === 'connected' && (
         <div css={css`
           position: absolute;
-          bottom: ${spacing.xl};
+          bottom: 32px;
           left: 50%;
           transform: translateX(-50%);
           animation: slideUp 0.8s ease-out 0.5s both;
-          
-          @keyframes slideUp {
-            from {
-              opacity: 0;
-              transform: translateX(-50%) translateY(20px);
-            }
-            to {
-              opacity: 1;
-              transform: translateX(-50%) translateY(0);
-            }
-          }
+          background: rgba(16, 185, 129, 0.9);
+          padding: 8px 16px;
+          border-radius: 20px;
+          font-size: 0.9rem;
+          font-weight: 600;
+          backdrop-filter: blur(10px);
         `}>
-          <Badge variant="success">✅ Lecteur connecté</Badge>
+          ✅ Lecteur connecté
         </div>
       )}
     </div>

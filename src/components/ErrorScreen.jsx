@@ -1,7 +1,5 @@
 import React from 'react';
 import { css } from '@emotion/react';
-import { colors, shadows, transitions, spacing, borderRadius } from '../styles/colors';
-import { Button } from './Button';
 
 export const ErrorScreen = ({ 
   title = 'Erreur de connexion',
@@ -17,10 +15,10 @@ export const ErrorScreen = ({
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      background: linear-gradient(135deg, ${colors.dark} 0%, ${colors.darkLight} 100%);
-      color: ${colors.white};
+      background: linear-gradient(135deg, #1A1A2E 0%, #2D2E47 100%);
+      color: white;
       text-align: center;
-      padding: ${spacing.lg};
+      padding: 24px;
       overflow: hidden;
       animation: fadeIn 0.4s ease-in-out;
       
@@ -31,7 +29,7 @@ export const ErrorScreen = ({
     `}>
       {/* Icône avec animation shake */}
       <div css={css`
-        margin-bottom: ${spacing.xl};
+        margin-bottom: 32px;
         font-size: 4rem;
         animation: shake 0.5s ease-in-out;
         
@@ -47,9 +45,9 @@ export const ErrorScreen = ({
       {/* Titre */}
       <h2 css={css`
         font-size: 1.75rem;
-        margin-bottom: ${spacing.md};
+        margin: 0 0 16px 0;
         font-weight: 700;
-        color: ${colors.white};
+        color: white;
       `}>
         {title}
       </h2>
@@ -59,7 +57,7 @@ export const ErrorScreen = ({
         font-size: 1rem;
         color: rgba(255, 255, 255, 0.8);
         max-width: 500px;
-        margin: 0 0 ${spacing.xl} 0;
+        margin: 0 0 32px 0;
         line-height: 1.6;
       `}>
         {message}
@@ -67,17 +65,33 @@ export const ErrorScreen = ({
 
       {/* Bouton Réessayer */}
       {onRetry && (
-        <Button 
-          variant="primary" 
+        <button
           onClick={onRetry}
           css={css`
-            margin-top: ${spacing.lg};
+            padding: 16px 32px;
             font-size: 1.1rem;
-            padding: ${spacing.md} ${spacing.xl};
+            font-weight: 700;
+            background-color: #0066FF;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 102, 255, 0.3);
+            
+            &:hover {
+              background-color: #0052CC;
+              transform: translateY(-2px);
+              box-shadow: 0 8px 25px rgba(0, 102, 255, 0.4);
+            }
+            
+            &:active {
+              transform: translateY(0);
+            }
           `}
         >
           🔄 Réessayer
-        </Button>
+        </button>
       )}
     </div>
   );
