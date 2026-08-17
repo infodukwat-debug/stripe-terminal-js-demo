@@ -15,7 +15,7 @@ import Group from "./Group/Group.jsx";
 import { css } from "@emotion/react";
 
 const DEFAULT_BACKEND_URL = 'https://qnook-backend-unified.onrender.com';
-const EXTRA_MINUTE_PRICE = 50; // 0,5 € par minute supplémentaire
+const EXTRA_MINUTE_PRICE = 50;
 const INCREMENT_STEP_MINUTES = 5;
 const MAX_INCREMENT_ATTEMPTS = 20;
 
@@ -24,7 +24,6 @@ const testCards = [
   { name: "Refus - fonds insuffisants", number: "4000000000009995", type: "charge_declined_insufficient_funds" },
 ];
 
-// Composant clavier virtuel ultra-compact (sans dépendance externe)
 class SimpleKeyboard extends React.Component {
   constructor(props) {
     super(props);
@@ -112,7 +111,6 @@ class SimpleKeyboard extends React.Component {
   }
 }
 
-// Modal d'inactivité personnalisée
 const InactivityModal = ({ onContinue, onQuit }) => (
   <div style={{
     position: 'fixed',
@@ -192,45 +190,42 @@ class App extends Component {
       currentAuthorizedAmount: 0,
       pricePerMinute: 0,
       showKeyboard: false,
-      // Inactivité
       showInactivityModal: false,
       inactivityTimer1: null,
       inactivityTimer2: null,
       sessionPolling: null,
-
+      readerStatus: "initializing",
+      readerError: null,
     };
   }
 
 componentDidMount() {
   this.initializeBackendClientAndTerminal(DEFAULT_BACKEND_URL);
   this.loadProducts();
-  this.autoConnectSimulator();
+  
+  // Attendre 2 secondes que Stripe Terminal JS soit chargé
+  setTimeout(() => {
+    this.autoConnectSimulator();
+  }, 2000);
+  
   this.resetInactivityTimers();
 
-  // Polling toutes les secondes pour vérifier si la session est encore active
   this.sessionPolling = setInterval(() => {
-    // Vérifier qu'une session est active
     if (!this.state.sessionActive) return;
     if (this.state.paymentInProgress) return;
     
-    console.log("[Polling] Vérification...");
-    
-    // ⚠️ ATTENTION : En production, remplacez 'http://localhost:5000' par l'URL de votre backend !
-    // Exemple : `${this.state.backendURL}/is-session-active`
     fetch('http://localhost:5000/is-session-active')
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
       .then(data => {
-        console.log("[Polling] active =", data.active);
         if (!data.active) {
-          console.log("🔔 Fin de session détectée ! Appel de endSession()");
           this.endSession();
         }
       })
       .catch(err => console.error("[Polling] Erreur:", err));
-  }, 1000);
+  }, 2000);
 }
 
 componentWillUnmount() {
@@ -238,7 +233,7 @@ componentWillUnmount() {
   if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
   if (this.sessionPolling) clearInterval(this.sessionPolling);
 }
-  // ========== GESTION INACTIVITÉ ==========
+
   resetInactivityTimers = () => {
     if (this.state.sessionActive || this.state.paymentInProgress) return;
     this.clearInactivityTimers();
@@ -292,9 +287,7 @@ componentWillUnmount() {
   handleQuitSession = () => {
     this.quitToWelcome();
   };
-  // ========== FIN GESTION INACTIVITÉ ==========
 
-  // ✅ CORRECTION ICI : Gestion de l'AbortError pour le chargement des produits
   loadProducts = async () => {
     const { backendURL } = this.state;
     if (!backendURL) return;
@@ -304,7 +297,6 @@ componentWillUnmount() {
       const data = await response.json();
       this.setState({ products: data });
     } catch (err) {
-      // Ignorer silencieusement les AbortError (changement de page)
       if (err.name === 'AbortError') {
         console.warn("Chargement des produits annulé");
         return;
@@ -314,26 +306,58 @@ componentWillUnmount() {
   };
 
   autoConnectSimulator = async () => {
+    console.log("🔄 Tentative de connexion au simulateur...");
+    
     let attempts = 0;
-    const maxAttempts = 30;
+    const maxAttempts = 20;
+    
     while (!this.terminal && attempts < maxAttempts) {
       await new Promise(r => setTimeout(r, 500));
       attempts++;
     }
+    
     if (!this.terminal) {
-      console.error("❌ Terminal non initialisé après 15s");
+      console.error("❌ Terminal non initialisé");
+      this.setState({ 
+        readerStatus: "error",
+        readerError: "Terminal Stripe non initialisé" 
+      });
       return;
     }
+
     try {
       const simulatedResult = await this.terminal.discoverReaders({ simulated: true });
-      if (simulatedResult.discoveredReaders && simulatedResult.discoveredReaders.length > 0) {
-        await this.connectToReader(simulatedResult.discoveredReaders[0]);
-        console.log("✅ Simulateur connecté automatiquement");
+      
+      if (!simulatedResult) {
+        throw new Error("Pas de réponse de discoverReaders");
+      }
+
+      if (simulatedResult.error) {
+        throw new Error(simulatedResult.error.message || "Erreur découverte");
+      }
+
+      if (!simulatedResult.discoveredReaders || simulatedResult.discoveredReaders.length === 0) {
+        throw new Error("Aucun simulateur trouvé");
+      }
+
+      const connectResult = await this.connectToReader(simulatedResult.discoveredReaders[0]);
+      
+      if (connectResult && !connectResult.error) {
+        console.log("✅ Simulateur connecté avec succès");
+        this.setState({ 
+          readerStatus: "connected",
+          readerError: null,
+          usingSimulator: true
+        });
       } else {
-        console.error("❌ Aucun simulateur trouvé");
+        throw new Error("Impossible de se connecter au simulateur");
       }
     } catch (err) {
-      console.error("❌ Erreur connexion auto au simulateur:", err);
+      console.error("❌ Erreur connexion simulateur:", err.message);
+      this.setState({ 
+        readerStatus: "error",
+        readerError: err.message 
+      });
     }
   };
 
@@ -407,7 +431,6 @@ componentWillUnmount() {
 
   cancelDiscoverReaders = () => this.setState({ discoveryWasCancelled: true });
 
-  // ✅ CORRECTION ICI : Gestion de l'AbortError pour la connexion au simulateur
   connectToSimulator = async () => {
     try {
       const simulatedResult = await this.terminal.discoverReaders({ simulated: true });
@@ -415,7 +438,6 @@ componentWillUnmount() {
         await this.connectToReader(simulatedResult.discoveredReaders[0]);
       }
     } catch (err) {
-      // Ignorer silencieusement les AbortError
       if (err.name === 'AbortError') {
         console.warn("Connexion au simulateur annulée.");
         return;
@@ -551,9 +573,7 @@ componentWillUnmount() {
       if (this.timerInterval) clearInterval(this.timerInterval);
       this.timerInterval = setInterval(() => this.checkReminderAndUpdate(), 1000);
 
-      // Ouverture de la serrure (appel local)
       try {
-        // ⚠️ ATTENTION : Remplacez aussi 'http://localhost:5000' par l'URL de votre backend en prod !
         await fetch('http://localhost:5000/ouvrir', { method: 'POST' });
         console.log("✅ Serrure ouverte");
       } catch (err) {
@@ -707,7 +727,6 @@ endSession = async () => {
     needIncrement = totalDue > this.currentAuthorizedAmount;
   }
 
-  // Incrémentation adaptative (inchangée)
   if (needIncrement) {
     let currentAuth = this.currentAuthorizedAmount;
     let attempts = 0;
@@ -744,7 +763,6 @@ endSession = async () => {
     finalCaptureAmount = Math.min(totalDue, currentAuth);
   }
 
-  // Construction description (inchangée)
   const productPrice = (this.state.selectedProduct.price / 100).toFixed(2);
   const extraPrice = ((finalCaptureAmount - this.state.selectedProduct.price) / 100).toFixed(2);
   const totalPrice = (finalCaptureAmount / 100).toFixed(2);
@@ -753,7 +771,6 @@ endSession = async () => {
   description += `\nTotal : ${totalPrice} €`;
 
   try {
-    // 1. Mettre à jour la description
     await fetch(`${this.state.backendURL}/update-payment-intent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -763,7 +780,6 @@ endSession = async () => {
       })
     }).catch(e => console.warn);
 
-    // 2. Capturer le paiement
     const captureResponse = await fetch(`${this.state.backendURL}/capture-payment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -912,10 +928,67 @@ endSession = async () => {
       discoveredReaders,
       showKeyboard,
       showInactivityModal,
+      readerStatus,
+      readerError,
     } = this.state;
 
     if (showInactivityModal) {
       return <InactivityModal onContinue={this.handleContinueSession} onQuit={this.handleQuitSession} />;
+    }
+
+    // Écran de chargement du lecteur
+    if (readerStatus === "initializing") {
+      return (
+        <div style={{
+          width: '100vw',
+          height: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: '#1a1a2e',
+          color: 'white',
+          textAlign: 'center',
+        }}>
+          <h2>🔄 Connexion au lecteur...</h2>
+          <p>Veuillez patienter...</p>
+        </div>
+      );
+    }
+
+    // Écran d'erreur du lecteur
+    if (readerStatus === "error") {
+      return (
+        <div style={{
+          width: '100vw',
+          height: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: '#1a1a2e',
+          color: 'white',
+          textAlign: 'center',
+        }}>
+          <h2>❌ Erreur de connexion</h2>
+          <p>{readerError}</p>
+          <button
+            onClick={() => this.autoConnectSimulator()}
+            style={{
+              marginTop: '20px',
+              padding: '10px 20px',
+              background: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontSize: '1rem'
+            }}
+          >
+            🔄 Réessayer
+          </button>
+        </div>
+      );
     }
 
     if (showWelcomeScreen) {
@@ -939,6 +1012,9 @@ endSession = async () => {
           <h1 style={{ fontSize: '4rem', marginBottom: '20px' }}>🛋️ Qnook</h1>
           <p style={{ fontSize: '1.5rem' }}>Bienvenue chez Qnook</p>
           <p style={{ fontSize: '1rem', marginTop: '40px', color: '#aaa' }}>Touchez l'écran pour commencer</p>
+          {readerStatus === "connected" && (
+            <p style={{ fontSize: '0.8rem', marginTop: '20px', color: '#28a745' }}>✅ Lecteur connecté</p>
+          )}
         </div>
       );
     }
@@ -1026,10 +1102,12 @@ endSession = async () => {
             </div>
           )}
           <div style={{ marginTop: '20px' }}>
-            <button onClick={this.submitEmailForm} disabled={paymentInProgress} style={{ padding: '8px 16px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '0.9rem' }}>
+            <button onClick={this.submitEmailForm} disabled={paymentInProgress} style={{ padding: '8px 16px', background: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
               Démarrer la session
             </button>
-            <button onClick={this.cancelEmailForm} style={{ marginLeft: '10px', padding: '8px 16px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '0.9rem' }}>Annuler</button>
+            <button onClick={this.cancelEmailForm} style={{ marginLeft: '10px', padding: '8px 16px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+              Annuler
+            </button>
           </div>
           
           {showKeyboard && (
@@ -1064,7 +1142,7 @@ endSession = async () => {
     }
     
     if (!reader) {
-      return <Readers onClickDiscover={() => this.discoverReaders()} onClickCancelDiscover={() => this.cancelDiscoverReaders()} onSubmitRegister={this.registerAndConnectNewReader} readers={discoveredReaders} onConnectToReader={this.connectToReader} handleUseSimulator={this.connectToSimulator} listLocations={this.client.listLocations} />;
+      return <Readers onClickDiscover={() => this.discoverReaders()} onClickCancelDiscover={() => this.cancelDiscoverReaders()} onSubmitRegister={this.registerAndConnectNewReader} readers={discoveredReaders} />;
     }
 
     if (sessionActive) {
@@ -1080,7 +1158,9 @@ endSession = async () => {
           <button onClick={this.endSession} disabled={paymentInProgress} style={{ padding: '10px 20px', background: '#28a745', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
             {paymentInProgress ? "Paiement en cours..." : "Terminer et payer"}
           </button>
-          <button onClick={this.cancelSession} style={{ marginLeft: '10px', padding: '10px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>Annuler</button>
+          <button onClick={this.cancelSession} style={{ marginLeft: '10px', padding: '10px 20px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+            Annuler
+          </button>
         </div>
       );
     }
