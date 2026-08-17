@@ -696,7 +696,7 @@ componentWillUnmount() {
           durationChosen: chosenMinutes,
         }),
       });
-    } catch (err) {\\n      console.error("Erreur envoi rappel:", err);
+    } catch (err) {     console.error("Erreur envoi rappel:", err);
     }
   };
 
