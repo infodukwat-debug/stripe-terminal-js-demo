@@ -7,6 +7,8 @@ class App extends Component {
     this.state = {
       readerStatus: "initializing",
       showProductSelection: false,
+      showEmailForm: false,
+      selectedProduct: null,
       products: [],
     };
   }
@@ -41,12 +43,28 @@ class App extends Component {
   };
 
   handleProductSelect = (product) => {
-    console.log("Produit sélectionné:", product);
-    alert(`Vous avez choisi: ${product.name} - ${(product.price / 100).toFixed(2)} EUR`);
+    this.setState({ 
+      selectedProduct: product,
+      showEmailForm: true,
+      showProductSelection: false
+    });
+  };
+
+  handleEmailFormCancel = () => {
+    this.setState({
+      showProductSelection: true,
+      showEmailForm: false,
+      selectedProduct: null
+    });
+  };
+
+  handleEmailFormSubmit = () => {
+    // TODO: Traiter le paiement
+    console.log("Paiement pour:", this.state.selectedProduct);
   };
 
   render() {
-    const { readerStatus, showProductSelection, products } = this.state;
+    const { readerStatus, showProductSelection, showEmailForm, selectedProduct, products } = this.state;
 
     // Écran de chargement
     if (readerStatus === "initializing") {
@@ -69,6 +87,113 @@ class App extends Component {
           <p style={{ fontSize: "1rem", color: "rgba(255, 255, 255, 0.7)" }}>
             Veuillez patienter...
           </p>
+        </div>
+      );
+    }
+
+    // Écran de formulaire email
+    if (showEmailForm && selectedProduct) {
+      return (
+        <div style={{
+          width: "100vw",
+          height: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "linear-gradient(135deg, #F5F5F7 0%, #FFFFFF 100%)",
+          padding: "24px",
+        }}>
+          <div style={{
+            background: "white",
+            borderRadius: "16px",
+            padding: "32px",
+            maxWidth: "500px",
+            width: "100%",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
+          }}>
+            <h2 style={{ marginBottom: "24px", color: "#1A1A2E" }}>
+              Options de la session
+            </h2>
+
+            <p style={{
+              marginBottom: "24px",
+              color: "#6B7280",
+            }}>
+              Vous avez choisi : <strong>{selectedProduct.name}</strong>
+              <br />
+              <strong style={{ color: "#0066FF" }}>
+                {(selectedProduct.price / 100).toFixed(2)} EUR
+              </strong>
+            </p>
+
+            <div style={{ marginBottom: "24px" }}>
+              <label style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                cursor: "pointer",
+              }}>
+                <input type="checkbox" />
+                Recevoir le reçu par email
+              </label>
+            </div>
+
+            <div style={{
+              display: "flex",
+              gap: "12px",
+              marginTop: "32px",
+              flexWrap: "wrap",
+            }}>
+              <button 
+                onClick={this.handleEmailFormSubmit}
+                style={{
+                  flex: 1,
+                  padding: "16px",
+                  backgroundColor: "#0066FF",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "10px",
+                  fontWeight: "700",
+                  cursor: "pointer",
+                  fontSize: "1.1rem",
+                  transition: "all 0.3s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "#0052CC";
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "#0066FF";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
+              >
+                Démarrer la session
+              </button>
+              <button 
+                onClick={this.handleEmailFormCancel}
+                style={{
+                  flex: 1,
+                  padding: "16px",
+                  backgroundColor: "#E5E7EB",
+                  color: "#1A1A2E",
+                  border: "none",
+                  borderRadius: "10px",
+                  fontWeight: "700",
+                  cursor: "pointer",
+                  fontSize: "1.1rem",
+                  transition: "all 0.3s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "#D1D5DB";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "#E5E7EB";
+                }}
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
         </div>
       );
     }
